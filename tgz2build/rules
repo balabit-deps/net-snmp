@@ -1,0 +1,56 @@
+#!/usr/local/bin/make -f
+STAMPDIR=tgz2build/stamps
+
+CONFIGURE_OPTS := --prefix $(ZBS_PREFIX) --disable-agent --disable-applications --disable-manuals --disable-embedded-perl --with-default-snmp-version="3" --with-openssl  --with-sys-contact="root" --with-sys-location="Unknown" --with-logfile=none --with-persistent-directory=/opt/syslog-ng/var/snmp --without-perl-modules --enable-reentrant
+CONFIGURE_CMD = $(SHELL) ./configure
+
+all: binary
+
+binary: clean setup configure build install
+
+ifeq (,$(CC))
+CC:=gcc
+endif
+
+ifneq (,$(findstring sparc64,$(ZBS_ARCH)))
+  ifneq (,$(findstring solaris-8,$(ZBS_DIST)))
+    CONFIGURE_OPTS += --build=sparc64-sun-solaris2.8
+  endif
+  ifneq (,$(findstring solaris-9,$(ZBS_DIST)))
+    CONFIGURE_OPTS += --build=sparc64-sun-solaris2.9
+  endif
+  ifneq (,$(findstring solaris-10,$(ZBS_DIST)))
+    CONFIGURE_OPTS += --build=sparc64-sun-solaris2.10
+  endif
+endif
+ifneq (,$(findstring tru64,$(ZBS_DIST)))
+CFLAGS += -D_XOPEN_SOURCE=500 -D_XOPEN_SOURCE_EXTENDED -D_OSF_SOURCE -D_POSIX_C_SOURCE -pthread
+endif
+
+setup:  $(STAMPDIR)/stamp-setup
+$(STAMPDIR)/stamp-setup:
+	mkdir -p tgz2build/stamps
+	touch $@
+
+configure: $(STAMPDIR)/stamp-configure
+$(STAMPDIR)/stamp-configure: setup
+	$(CONFIGURE_CMD) $(CONFIGURE_OPTS)
+	touch $@
+
+build:  $(STAMPDIR)/stamp-build
+$(STAMPDIR)/stamp-build: configure
+	$(MAKE)
+	touch $@
+
+install: $(STAMPDIR)/stamp-install
+$(STAMPDIR)/stamp-install: build
+	rm -rf $(ZBS_STAGE_DIR) || true
+	$(MAKE) install prefix=$(ZBS_STAGE_DIR)/$(ZBS_PREFIX)
+	touch $@
+
+clean:
+	rm -rf tgz2build/stamps || true
+	rm -rf tgz2build/staging || true
+	-$(MAKE) clean
+
+.PHONY: build clean binary-indep binary-arch binary install
