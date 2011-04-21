@@ -22,6 +22,7 @@ ifneq (,$(findstring sparc64,$(ZBS_ARCH)))
   ifneq (,$(findstring solaris-10,$(ZBS_DIST)))
     CONFIGURE_OPTS += --build=sparc64-sun-solaris2.10
   endif
+  LDFLAGS += -Wl,-R/opt/syslog-ng/lib
 endif
 ifneq (,$(findstring tru64,$(ZBS_DIST)))
 CFLAGS += -D_XOPEN_SOURCE=500 -D_XOPEN_SOURCE_EXTENDED -D_OSF_SOURCE -D_POSIX_C_SOURCE -pthread
@@ -34,7 +35,7 @@ $(STAMPDIR)/stamp-setup:
 
 configure: $(STAMPDIR)/stamp-configure
 $(STAMPDIR)/stamp-configure: setup
-	$(CONFIGURE_CMD) $(CONFIGURE_OPTS)
+	LDFLAGS="$(LDFLAGS)" $(CONFIGURE_CMD) $(CONFIGURE_OPTS)
 	touch $@
 
 build:  $(STAMPDIR)/stamp-build
