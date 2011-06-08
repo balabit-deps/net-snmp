@@ -1,3 +1,9 @@
+net-snmp (5.6.1-1.syslogng41.2) syslogngdeps30; urgency=low
+
+  * freebsd 7/8/9 specific header files added to dev package.
+
+ -- Tamas Pal <folti@balabit.com>  Wed, 08 Jun 2011 13:17:43 +0200
+
 net-snmp (5.6.1-1.syslogng41.1) syslogngdeps30; urgency=low
 
   * changed build system.
