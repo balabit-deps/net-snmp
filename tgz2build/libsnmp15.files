@@ -1,3 +1,4 @@
 opt/syslog-ng/share/*
+opt/syslog-ng/lib/*.dylib
 opt/syslog-ng/lib/lib*.s[o,l]*
 opt/syslog-ng/lib/lib*.a
