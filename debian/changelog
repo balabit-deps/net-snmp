@@ -1,3 +1,10 @@
+net-snmp (5.6.1-1.syslogng50.1) syslogngdeps50; urgency=low
+
+  * windows build support added
+  * release for syslog-ng-5.0
+
+ -- Laszlo Budai <lbudai@balabit.com>  Tue, 17 Sep 2013 11:25:26 +0200
+
 net-snmp (5.6.1-1.syslogng41.2) syslogngdeps30; urgency=low
 
   * freebsd 7/8/9 specific header files added to dev package.
