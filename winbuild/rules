@@ -1,0 +1,44 @@
+#!/usr/local/bin/make -f
+STAMPDIR=winbuild/stamps
+STAGINGDIR=winbuild/staging
+
+# needed, otherwise when ran from a command line(zbs login), make install rm -rf's /...
+ZBS_STAGE_DIR=$(STAGINGDIR)
+BUILDCMD=./balabit-vs-build
+
+all: binary
+
+binary: clean setup configure build install
+
+ifeq (,$(CC))
+CC:=gcc
+endif
+
+setup: $(STAMPDIR)/stamp-setup
+$(STAMPDIR)/stamp-setup:
+	mkdir $(STAMPDIR) || true
+	chmod +x $(BUILDCMD)
+	touch $@
+
+configure: $(STAMPDIR)/stamp-configure
+$(STAMPDIR)/stamp-configure: setup
+	$(BUILDCMD) configure --prefix=$(ZBS_PREFIX)
+	touch $@
+
+build:  $(STAMPDIR)/stamp-build
+$(STAMPDIR)/stamp-build: configure
+	$(BUILDCMD) make
+	touch $@
+
+install: $(STAMPDIR)/stamp-install
+$(STAMPDIR)/stamp-install: build
+	rm -rf $(ZBS_STAGE_DIR) || true
+	$(BUILDCMD) make install DESTDIR=$(ZBS_STAGE_DIR)/ ECHO=echo
+	touch $@
+
+clean:
+	-$(BUILDCMD) make clean
+	rm -rf winbuild/stamps || true
+	rm -rf winbuild/staging || true
+
+.PHONY: build setup clean binary-indep binary-arch binary install
