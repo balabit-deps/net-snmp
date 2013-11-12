@@ -35098,8 +35098,9 @@ fi
 if test "x$enable_md5" = "xno"; then
     authmodes=`echo $authmodes | $SED 's/MD5 *//;'`
 fi
-
-
+if test "x$enable_des" = "xno"; then
+    encrmodes=`echo $encrmodes | $SED 's/DES *//;'`
+fi
 
 
   cat >> configure-summary << EOF
