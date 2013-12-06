@@ -823,6 +823,7 @@ sc_encrypt(const oid * privtype, size_t privtypelen,
     }
 #endif
 #ifdef HAVE_AES
+#ifdef NETSNMP_USE_INTERNAL_CRYPTO
     if (ISTRANSFORM(privtype, AESPriv)) {
         (void) AES_set_encrypt_key(key, properlength*8, &aes_key);
 
@@ -834,8 +835,23 @@ sc_encrypt(const oid * privtype, size_t privtypelen,
                            &aes_key, my_iv, &new_ivlen, AES_ENCRYPT);
         *ctlen = ptlen;
     }
+#else
+    if (ISTRANSFORM(privtype, AESPriv)) {
+        EVP_CIPHER_CTX ctx;
+        int outlen, tmplen;
+
+        memcpy(my_iv, iv, ivlen);
+        EVP_EncryptInit(&ctx, EVP_aes_128_cfb128(), key, my_iv);
+        EVP_EncryptUpdate(&ctx, ciphertext, &outlen, plaintext, ptlen);
+        EVP_EncryptFinal(&ctx, ciphertext + outlen, &tmplen);
+        EVP_CIPHER_CTX_cleanup(&ctx);
+
+        *ctlen = ptlen;
+    }
 #endif
-  sc_encrypt_quit:
+#endif
+
+sc_encrypt_quit:
     /*
      * clear memory just in case 
      */
@@ -1046,6 +1062,7 @@ sc_decrypt(const oid * privtype, size_t privtypelen,
     }
 #endif
 #ifdef HAVE_AES
+#ifdef NETSNMP_USE_INTERNAL_CRYPTO
     if (ISTRANSFORM(privtype, AESPriv)) {
         (void) AES_set_encrypt_key(key, properlength*8, &aes_key);
 
@@ -1057,6 +1074,20 @@ sc_decrypt(const oid * privtype, size_t privtypelen,
                            &aes_key, my_iv, &new_ivlen, AES_DECRYPT);
         *ptlen = ctlen;
     }
+#else
+    if (ISTRANSFORM(privtype, AESPriv)) {
+        EVP_CIPHER_CTX ctx;
+        int outlen, tmplen;
+
+        memcpy(my_iv, iv, ivlen);
+        EVP_DecryptInit(&ctx, EVP_aes_128_cfb128(), key, my_iv);
+        EVP_DecryptUpdate(&ctx, plaintext, &outlen, ciphertext, ctlen);
+        EVP_DecryptFinal(&ctx, plaintext + outlen, &tmplen);
+        EVP_CIPHER_CTX_cleanup(&ctx);
+
+        *ptlen = ctlen;
+    }
+#endif
 #endif
 
     /*
