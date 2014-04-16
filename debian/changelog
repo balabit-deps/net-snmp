@@ -1,3 +1,9 @@
+net-snmp (5.6.1-1.syslogng51.2) syslogngdeps51; urgency=low
+
+  * Fix compile error on FreeBSD 9.x/POSIXify auto_nlist, etc
+
+ -- Laszlo Budai <lbudai@balabit.com>  Wed, 16 Apr 2014 14:35:09 +0200
+
 net-snmp (5.6.1-1.syslogng51.1) syslogngdeps51; urgency=low
 
   * release for syslog-ng-5.1
