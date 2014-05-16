@@ -94,6 +94,11 @@ case "$cmd" in
           solver=`echo $ZBS_DIST | cut -f2 -d'-'`
           CONFOPTS=" --build=sparc64-sun-solaris2.$solver"
           LDFLAGS="$LDFLAGS -Wl,-R/opt/syslog-ng/lib"
+          if test -n "$LD_LIBRARY_PATH_64"; then
+                  BUILD_LD_LIB_PATH=$LD_LIBRARY_PATH_64
+                  LD_LIBRARY_PATH=$LD_LIBRARY_PATH_64
+                  export LD_LIBRARY_PATH
+          fi
         fi
         ;;
       tru64*)
@@ -114,6 +119,16 @@ case "$cmd" in
     $MAKE sedscript
     ;;
   make)
+    case "$ZBS_DIST" in
+      solaris-*)
+        if [ "$ZBS_ARCH" = "sparc64" ]; then
+          if test -n "$LD_LIBRARY_PATH_64"; then
+                  LD_LIBRARY_PATH=$LD_LIBRARY_PATH_64
+                  export LD_LIBRARY_PATH
+          fi
+        fi
+        ;;
+    esac
     case $1 in
       distclean)
         $MAKE distclean || true
