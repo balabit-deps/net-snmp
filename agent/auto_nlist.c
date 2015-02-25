@@ -65,7 +65,7 @@ auto_nlist_value(const char *string)
 #if defined(aix4) || defined(aix5) || defined(aix6) || defined(aix7)
         strcpy(it->nl[0].n_name, string);
         it->nl[0].n_name[strlen(string)+1] = '\0';
-#elif defined(freebsd9)
+#elif defined(freebsd9) || defined(freebsd10)
         sprintf(__DECONST(char*, it->nl[0].n_name), "_%s", string);
 #else
         sprintf(it->nl[0].n_name, "_%s", string);
@@ -74,7 +74,7 @@ auto_nlist_value(const char *string)
         init_nlist(it->nl);
 #if !(defined(aix4) || defined(aix5) || defined(aix6) || defined(aix7))
         if (it->nl[0].n_type == 0) {
-#if defined(freebsd9)
+#if defined(freebsd9) || defined(freebsd10)
             strcpy(__DECONST(char*, it->nl[0].n_name), string);
             __DECONST(char*, it->nl[0].n_name)[strlen(string)+1] = '\0';
 #else
