@@ -9,6 +9,7 @@ builder:
                 --with-logfile=none
                 --with-persistent-directory=/opt/syslog-ng/var/snmp
                 --without-perl-modules --enable-reentrant 
+                --disable-des --disable-md5
                 --with-openssl=\${prefix}
   flags: "no-make-dist"
 platforms:
