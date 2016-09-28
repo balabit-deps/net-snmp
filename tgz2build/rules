@@ -22,11 +22,7 @@ $(STAMPDIR)/stamp-setup:
 
 configure: $(STAMPDIR)/stamp-configure
 $(STAMPDIR)/stamp-configure: setup
-ifneq (,$(findstring fips,$(TGZ_BUILD_OPTS)))
-	ENABLE_FIPS=true $(BUILDCMD) configure --prefix=$(ZBS_PREFIX)
-else
 	$(BUILDCMD) configure --prefix=$(ZBS_PREFIX)
-endif
 	touch $@
 
 build:  $(STAMPDIR)/stamp-build
