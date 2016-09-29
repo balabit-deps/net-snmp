@@ -1,3 +1,9 @@
+net-snmp (5.6.1-1.syslogng60.1) syslogng60; urgency=medium
+
+  * release for syslog-ng-6.0
+
+ -- jviktor <jviktor@devel57>  Thu, 29 Sep 2016 14:34:41 +0200
+
 net-snmp (5.6.1-1.syslogng53.3) syslogng53; urgency=low
 
   * release on freebsd-10.1
