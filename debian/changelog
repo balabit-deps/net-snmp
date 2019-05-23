@@ -1,3 +1,9 @@
+net-snmp (5.6.1-2.syslogng60.2) syslogng60; urgency=medium
+
+  * add 'net-snmp-config' to package
+
+ -- Gabor Nagy <gabor.nagy@oneidentity.com>  Thu, 23 May 2019 13:24:12 +0200
+
 net-snmp (5.6.1-2.syslogng60.1) syslogng60; urgency=medium
 
   * release for syslog-ng-6.0
