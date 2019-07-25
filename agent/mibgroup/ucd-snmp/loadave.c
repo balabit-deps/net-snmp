@@ -39,8 +39,10 @@
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
+#if !defined(dragonfly)
 #ifdef HAVE_SYS_VNODE_H
 #include <sys/vnode.h>
+#endif
 #endif
 #ifdef HAVE_UFS_UFS_QUOTA_H
 #include <ufs/ufs/quota.h>
@@ -256,12 +258,6 @@ loadave_free_config(void)
 int
 try_getloadavg(double *r_ave, size_t s_ave)
 {
-#if defined(HAVE_GETLOADAVG) || defined(linux) || defined(ultrix) \
-    || defined(sun) || defined(__alpha) || defined(dynix) \
-    || !defined(cygwin) && defined(NETSNMP_CAN_USE_NLIST) \
-       && defined(LOADAVE_SYMBOL)
-    double         *pave = r_ave;
-#endif
 #ifndef HAVE_GETLOADAVG
 #ifdef HAVE_SYS_FIXPOINT_H
     fix             favenrun[3];
@@ -276,7 +272,6 @@ try_getloadavg(double *r_ave, size_t s_ave)
 #endif
 #endif
 #if defined(aix4) || defined(aix5) || defined(aix6) || defined(aix7)
-    int             favenrun[3];
     perfstat_cpu_total_t cs;
 #endif
 #if defined(hpux10) || defined(hpux11)
@@ -289,7 +284,7 @@ try_getloadavg(double *r_ave, size_t s_ave)
 #endif	/* !HAVE_GETLOADAVG */
 
 #ifdef HAVE_GETLOADAVG
-    if (getloadavg(pave, s_ave) == -1)
+    if (getloadavg(r_ave, s_ave) == -1)
         return (-1);
 #elif defined(linux)
     {
@@ -298,7 +293,7 @@ try_getloadavg(double *r_ave, size_t s_ave)
             NETSNMP_LOGONCE((LOG_ERR, "snmpd: cannot open /proc/loadavg\n"));
             return (-1);
         }
-        fscanf(in, "%lf %lf %lf", pave, (pave + 1), (pave + 2));
+        fscanf(in, "%lf %lf %lf", r_ave, (r_ave + 1), (r_ave + 2));
         fclose(in);
     }
 #elif (defined(ultrix) || defined(sun) || defined(__alpha) || defined(dynix))
@@ -306,7 +301,7 @@ try_getloadavg(double *r_ave, size_t s_ave)
         0)
         return (-1);
     for (i = 0; i < s_ave; i++)
-        *(pave + i) = FIX_TO_DBL(favenrun[i]);
+        *(r_ave + i) = FIX_TO_DBL(favenrun[i]);
 #elif defined(hpux10) || defined(hpux11)
     if (pstat_getdynamic(&pst_buf, sizeof(struct pst_dynamic), 1, 0) < 0)
         return(-1);
@@ -328,7 +323,7 @@ try_getloadavg(double *r_ave, size_t s_ave)
     DEBUGMSGTL(("ucd-snmp/loadave", "irix6: %d %d %d\n", favenrun[0], favenrun[1], favenrun[2]));
 #elif !defined(cygwin)
 #if defined(NETSNMP_CAN_USE_NLIST) && defined(LOADAVE_SYMBOL)
-    if (auto_nlist(LOADAVE_SYMBOL, (char *) pave, sizeof(double) * s_ave)
+    if (auto_nlist(LOADAVE_SYMBOL, (char *) r_ave, sizeof(double) * s_ave)
         == 0)
 #endif
         return (-1);
@@ -391,8 +386,7 @@ write_laConfig(int action,
             double val;
             char *endp;
 
-            strncpy(buf, (char *)var_val, var_val_len);
-            buf[var_val_len] = '\0';
+            sprintf(buf, "%.*s", (int) var_val_len, (char *)var_val);
             val = strtod(buf, &endp);
 
             if (errno == ERANGE || *endp != '\0' || val < 0 || val > 65536.00) {
@@ -479,10 +473,12 @@ var_extensible_loadave(struct variable * vp,
         if (maxload[name[*length - 1] - 1] != 0 &&
             avenrun[name[*length - 1] - 1] >=
             maxload[name[*length - 1] - 1]) {
-            sprintf(errmsg, "%d min Load Average too high (= %.2f)",
+            snprintf(errmsg, sizeof(errmsg),
+                     "%d min Load Average too high (= %.2f)",
                     (name[*length - 1] ==
                      1) ? 1 : ((name[*length - 1] == 2) ? 5 : 15),
                     avenrun[name[*length - 1] - 1]);
+            errmsg[sizeof(errmsg) - 1] = '\0';
         } else {
             errmsg[0] = 0;
         }

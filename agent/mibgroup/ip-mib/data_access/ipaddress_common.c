@@ -1,7 +1,7 @@
 /*
  *  Ipaddress MIB architecture support
  *
- * $Id: ipaddress_common.c 17810 2009-10-30 08:28:20Z magfr $
+ * $Id$
  */
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
@@ -11,6 +11,21 @@
 #include <net-snmp/data_access/interface.h>
 
 #include "ip-mib/ipAddressTable/ipAddressTable_constants.h"
+#include "ipaddress.h"
+#include "ipaddress_private.h"
+
+#include <net-snmp/net-snmp-features.h>
+
+netsnmp_feature_child_of(ipaddress_common, libnetsnmpmibs)
+
+netsnmp_feature_child_of(ipaddress_common_copy_utilities, ipaddress_common)
+netsnmp_feature_child_of(ipaddress_entry_copy, ipaddress_common)
+netsnmp_feature_child_of(ipaddress_entry_update, ipaddress_common)
+netsnmp_feature_child_of(ipaddress_prefix_copy, ipaddress_common_copy_utilities)
+
+#ifdef NETSNMP_FEATURE_REQUIRE_IPADDRESS_ENTRY_COPY
+netsnmp_feature_require(ipaddress_arch_entry_copy)
+#endif /* NETSNMP_FEATURE_REQUIRE_IPADDRESS_ENTRY_COPY */
 
 /**---------------------------------------------------------------------*/
 /*
@@ -20,29 +35,6 @@ static int _access_ipaddress_entry_compare_addr(const void *lhs,
                                                 const void *rhs);
 static void _access_ipaddress_entry_release(netsnmp_ipaddress_entry * entry,
                                             void *unused);
-
-/**---------------------------------------------------------------------*/
-/*
- * external per-architecture functions prototypes
- *
- * These shouldn't be called by the general public, so they aren't in
- * the header file.
- */
-extern int
-netsnmp_arch_ipaddress_container_load(netsnmp_container* container,
-                                      u_int load_flags);
-extern int
-netsnmp_arch_ipaddress_entry_init(netsnmp_ipaddress_entry *entry);
-extern int
-netsnmp_arch_ipaddress_entry_copy(netsnmp_ipaddress_entry *lhs,
-                                  netsnmp_ipaddress_entry *rhs);
-extern void
-netsnmp_arch_ipaddress_entry_cleanup(netsnmp_ipaddress_entry *entry);
-extern int
-netsnmp_arch_ipaddress_create(netsnmp_ipaddress_entry *entry);
-extern int
-netsnmp_arch_ipaddress_delete(netsnmp_ipaddress_entry *entry);
-
 
 /**---------------------------------------------------------------------*/
 /*
@@ -67,6 +59,7 @@ netsnmp_access_ipaddress_container_init(u_int flags)
         return NULL;
     }
     container1->container_name = strdup("ia_index");
+    container1->flags = CONTAINER_KEY_ALLOW_DUPLICATES;
 
     if (flags & NETSNMP_ACCESS_IPADDRESS_INIT_ADDL_IDX_BY_ADDR) {
         netsnmp_container *container2 =
@@ -79,11 +72,64 @@ netsnmp_access_ipaddress_container_init(u_int flags)
         
         container2->compare = _access_ipaddress_entry_compare_addr;
         container2->container_name = strdup("ia_addr");
+        /*
+         * With allowed duplicates, CONTAINER_INSERT does not need to sort whole
+         * container and check for duplicates. We remove duplicates manually in
+         * netsnmp_access_ipaddress_container_load.
+         */
+        container2->flags = CONTAINER_KEY_ALLOW_DUPLICATES;
         
         netsnmp_container_add_index(container1, container2);
     }
 
     return container1;
+}
+
+/**
+ * Remove duplicate entries from the container.
+ * This function returns new copy of the container and destroys
+ * the original one. Use like this:
+ *   c = _remove_duplicates(c, flags);
+ */
+static netsnmp_container *
+_remove_duplicates(netsnmp_container *container, u_int container_flags)
+{
+	netsnmp_container *c;
+	netsnmp_iterator *it;
+	netsnmp_container *ret;
+	netsnmp_ipaddress_entry *entry, *prev_entry;
+
+	if (! (container_flags & NETSNMP_ACCESS_IPADDRESS_INIT_ADDL_IDX_BY_ADDR)) {
+		/* We don't have address index, we can't detect duplicates */
+		return container;
+	}
+
+	ret = netsnmp_access_ipaddress_container_init(container_flags);
+
+	/* use the IpAddress index */
+	c = container->next;
+	it = CONTAINER_ITERATOR(c);
+	/* Sort the address index */
+	CONTAINER_FIND(c, ITERATOR_FIRST(it));
+
+
+	/*
+	 * Sequentially iterate over sorted container and add only unique entries
+	 * to 'ret'
+	 */
+	prev_entry = NULL;
+	for (entry = ITERATOR_FIRST(it); entry; entry = ITERATOR_NEXT(it)) {
+		if (prev_entry && _access_ipaddress_entry_compare_addr(prev_entry, entry) == 0) {
+			/* 'entry' is duplicate of the previous one -> delete it */
+			netsnmp_access_ipaddress_entry_free(entry);
+		} else {
+			CONTAINER_INSERT(ret, entry);
+			prev_entry = entry;
+		}
+	}
+	CONTAINER_FREE(container);
+	free(it);
+	return ret;
 }
 
 /**
@@ -99,9 +145,10 @@ netsnmp_access_ipaddress_container_load(netsnmp_container* container,
 
     DEBUGMSGTL(("access:ipaddress:container", "load\n"));
 
+    if (load_flags & NETSNMP_ACCESS_IPADDRESS_LOAD_ADDL_IDX_BY_ADDR)
+        container_flags |= NETSNMP_ACCESS_IPADDRESS_INIT_ADDL_IDX_BY_ADDR;
+
     if (NULL == container) {
-        if (load_flags & NETSNMP_ACCESS_IPADDRESS_LOAD_ADDL_IDX_BY_ADDR)
-            container_flags |= NETSNMP_ACCESS_IPADDRESS_INIT_ADDL_IDX_BY_ADDR;
         container = netsnmp_access_ipaddress_container_init(container_flags);
     }
     if (NULL == container) {
@@ -115,6 +162,9 @@ netsnmp_access_ipaddress_container_load(netsnmp_container* container,
                                                 NETSNMP_ACCESS_IPADDRESS_FREE_NOFLAGS);
         container = NULL;
     }
+
+    if (container)
+        container = _remove_duplicates(container, container_flags);
 
     return container;
 }
@@ -247,6 +297,7 @@ netsnmp_access_ipaddress_entry_set(netsnmp_ipaddress_entry * entry)
     return rc;
 }
 
+#ifndef NETSNMP_FEATURE_REMOVE_IPADDRESS_ENTRY_UPDATE
 /**
  * update an old ipaddress_entry from a new one
  *
@@ -329,7 +380,9 @@ netsnmp_access_ipaddress_entry_update(netsnmp_ipaddress_entry *lhs,
 
     return changed;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_IPADDRESS_ENTRY_UPDATE */
 
+#ifndef NETSNMP_FEATURE_REMOVE_IPADDRESS_ENTRY_COPY
 /**
  * copy an  ipaddress_entry
  *
@@ -361,12 +414,14 @@ netsnmp_access_ipaddress_entry_copy(netsnmp_ipaddress_entry *lhs,
     
     return 0;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_IPADDRESS_ENTRY_COPY */
 
 /**---------------------------------------------------------------------*/
 /*
  * Utility routines
  */
 
+#ifndef NETSNMP_FEATURE_REMOVE_IPADDRESS_PREFIX_COPY
 /**
  * copy the prefix portion of an ip address
  */
@@ -392,28 +447,76 @@ netsnmp_ipaddress_prefix_copy(u_char *dst, u_char *src, int addr_len, int pfx_le
 
     return pfx_len;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_IPADDRESS_PREFIX_COPY */
 
 
 /**
- * copy the prefix portion of an ip address
+ * Compute the prefix length of a network mask
  *
- * @param  mask  network byte order make
+ * @param  mask  network byte order mask
  *
  * @returns number of prefix bits
  */
 int
 netsnmp_ipaddress_ipv4_prefix_len(in_addr_t mask)
 {
-    int len = 0;
+    int i, len = 0;
+    unsigned char *mp = (unsigned char *)&mask;
 
-    while((0xff000000 & mask) == 0xff000000) {
-        len += 8;
-        mask = mask << 8;
+    for (i = 0; i < 4; i++)
+	if (mp[i] == 0xFF) len += 8;
+	else break;
+
+    if (i == 4)
+	return len;
+
+    while(0x80 & mp[i]) {
+        ++len;
+        mp[i] <<= 1;
     }
 
-    while(0x80000000 & mask) {
+    return len;
+}
+
+in_addr_t netsnmp_ipaddress_ipv4_mask(int len)
+{
+    int i = 0, m = 0x80;
+    in_addr_t mask;
+    unsigned char *mp = (unsigned char *)&mask;
+
+    if (len < 0 || len > 32) abort();
+
+    memset(mp, 0, sizeof(mask));
+
+    while (len >= 8) {
+        mp[i] = 0xFF;
+	len -= 8;
+	i++;
+    }
+    while (len) {
+        mp[i] |= m;
+	m >>= 1;
+	len--;
+    }
+    return mask;
+}
+
+int
+netsnmp_ipaddress_ipv6_prefix_len(struct in6_addr mask)
+{
+    int i, len = 0;
+    unsigned char *mp = (unsigned char *)&mask.s6_addr;
+
+    for (i = 0; i < 16; i++)
+	if (mp[i] == 0xFF) len += 8;
+	else break;
+
+    if (i == 16)
+	return len;
+
+    while(0x80 & mp[i]) {
         ++len;
-        mask = mask << 1;
+        mp[i] <<= 1;
     }
 
     return len;
@@ -451,6 +554,7 @@ static int _access_ipaddress_entry_compare_addr(const void *lhs,
     return memcmp(lh->ia_address, rh->ia_address, lh->ia_address_len);
 }
 
+#ifndef NETSNMP_FEATURE_REMOVE_IPADDRESS_COMMON_COPY_UTILITIES
 int
 netsnmp_ipaddress_flags_copy(u_long *ipAddressPrefixAdvPreferredLifetime,
                              u_long *ipAddressPrefixAdvValidLifetime,
@@ -495,4 +599,5 @@ netsnmp_ipaddress_prefix_origin_copy(u_long *ipAddressPrefixOrigin,
     }
     return 0;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_IPADDRESS_COMMON_COPY_UTILITIES */
 

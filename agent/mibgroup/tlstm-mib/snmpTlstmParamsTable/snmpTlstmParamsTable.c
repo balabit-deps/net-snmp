@@ -4,6 +4,7 @@
  */
 
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
 
@@ -13,6 +14,20 @@
 #include "tlstm-mib.h"
 
 #include "snmpTlstmParamsTable.h"
+
+netsnmp_feature_require(table_tdata)
+netsnmp_feature_require(tlstmparams_find)
+netsnmp_feature_require(tlstmparams_external)
+netsnmp_feature_require(cert_fingerprints)
+netsnmp_feature_require(table_tdata_delete_table)
+netsnmp_feature_require(table_tdata_extract_table)
+netsnmp_feature_require(table_tdata_remove_row)
+#ifndef NETSNMP_NO_WRITE_SUPPORT
+netsnmp_feature_require(check_vb_storagetype)
+netsnmp_feature_require(check_vb_type_and_max_size)
+netsnmp_feature_require(check_vb_rowstatus_with_storagetype)
+netsnmp_feature_require(table_tdata_insert_row)
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
 
 /** XXX - move these to table_data header? */
 #define FATE_NEWLY_CREATED    1
@@ -167,7 +182,7 @@ init_snmpTlstmParamsTable(void)
         snmp_log(LOG_ERR,
                  "could not create handler for snmpTlstmParamsTableLastChanged\n");
     else
-        netsnmp_register_watched_scalar(reg, watcher);
+        netsnmp_register_watched_scalar2(reg, watcher);
 
     /*
      * Initialise the contents of the table here
@@ -321,9 +336,7 @@ _params_add(snmpTlstmParamsTable_entry *entry)
     if (entry->snmpTlstmParamsStorageType == ST_NONVOLATILE)
         params->flags |= TLSTM_PARAMS_NONVOLATILE;
 
-    if (netsnmp_tlstmParams_add(params) != 0) {
-        netsnmp_tlstmParams_free(params);
-    }
+    netsnmp_tlstmParams_add(params);
 }
 
 static void
@@ -1124,8 +1137,8 @@ _tlstmParamsTable_save(int majorID, int minorID, void *serverarg,
                 continue;
             _save_params(params, type);
         }
+        ITERATOR_RELEASE(params_itr);
     }
-    ITERATOR_RELEASE(params_itr);
 
     /*
      * save inactive rows from mib
@@ -1245,22 +1258,22 @@ _tlstmParamsTable_row_restore_mib(const char *token, char *buf)
     if (RS_ACTIVE == rowStatus) {
         params->flags = TLSTM_PARAMS_FROM_MIB | TLSTM_PARAMS_NONVOLATILE;
 
-        if (netsnmp_tlstmParams_add(params) != 0)
-            netsnmp_tlstmParams_free(params);
-    }
-    else {
+        netsnmp_tlstmParams_add(params);
+    } else {
         netsnmp_tdata_row     *row;
         snmpTlstmParamsTable_entry  *entry;
 
         row = snmpTlstmParamsTable_createEntry(_table_data, params->name,
                                                strlen(params->name));
-        if (!row)
+        if (!row) {
+            netsnmp_tlstmParams_free(params);
             return;
+        }
 
         entry = row->data;
         
         entry->hashType = params->hashType;
-        strncpy(entry->snmpTlstmParamsClientFingerprint,params->fingerprint,
+        strlcpy(entry->snmpTlstmParamsClientFingerprint, params->fingerprint,
                 sizeof(entry->snmpTlstmParamsClientFingerprint));
         entry->snmpTlstmParamsClientFingerprint_len =
             strlen(entry->snmpTlstmParamsClientFingerprint);

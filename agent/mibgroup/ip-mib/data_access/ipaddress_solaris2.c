@@ -3,6 +3,7 @@
  *
  */
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #include <net-snmp/net-snmp-includes.h>
 
 #include <net-snmp/agent/net-snmp-agent-includes.h>
@@ -10,9 +11,12 @@
 #include <net-snmp/data_access/interface.h>
 
 #include "ip-mib/ipAddressTable/ipAddressTable_constants.h"
+#include "ipaddress_private.h"
 
 #include "kernel_sunos5.h"
 #include "mibII/mibII_common.h"
+
+netsnmp_feature_child_of(ipaddress_arch_entry_copy, ipaddress_common)
 
 static int _load_v4(netsnmp_container *container, int idx_offset);
 #if defined( NETSNMP_ENABLE_IPV6 )
@@ -43,6 +47,7 @@ netsnmp_arch_ipaddress_entry_cleanup(netsnmp_ipaddress_entry *entry)
      */
 }
 
+#ifndef NETSNMP_FEATURE_REMOVE_IPADDRESS_ARCH_ENTRY_COPY
 /*
  * copy arch specific storage
  */
@@ -55,6 +60,7 @@ netsnmp_arch_ipaddress_entry_copy(netsnmp_ipaddress_entry *lhs,
      */
     return 0;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_IPADDRESS_ARCH_ENTRY_COPY */
 
 /*
  * create a new entry
@@ -143,11 +149,11 @@ _load_v4(netsnmp_container *container, int idx_offset)
     while ((rc = getMibstat(MIB_IP_ADDR, &ipae, sizeof(ipae), req,
                             &Get_everything, NULL)) == 0) {
         req = GET_NEXT;
+        if (ipae.ipAdEntAddr == INADDR_ANY)
+            continue;
         entry = netsnmp_access_ipaddress_entry_create();
         if (entry == NULL)
             return (-1);    
-        if (ipae.ipAdEntAddr == INADDR_ANY)
-            continue;
 
         ipae.ipAdEntIfIndex.o_bytes[ipae.ipAdEntIfIndex.o_length] = '\0';
         DEBUGMSGTL(("access:ipaddress:container", "found if %s\n",
@@ -186,7 +192,7 @@ _load_v4(netsnmp_container *container, int idx_offset)
 
         entry->ns_ia_index = ++idx_offset;
 
-        DEBUGMSGTL(("access:ipaddress:container", "insert if %d, addrlen %d\n", 
+        DEBUGMSGTL(("access:ipaddress:container", "insert if %" NETSNMP_PRIo "u, addrlen %d\n", 
                     entry->if_index, entry->ia_address_len));
 
         if (CONTAINER_INSERT(container, entry) < 0) {
@@ -219,13 +225,13 @@ _load_v6(netsnmp_container *container, int idx_offset)
     while ((rc = getMibstat(MIB_IP6_ADDR, &ip6ae, sizeof(ip6ae), req,
                             &Get_everything, NULL)) == 0) {
         req = GET_NEXT;
-        entry = netsnmp_access_ipaddress_entry_create();
-        if (entry == NULL)
-            return (-1);    
         if (memcmp((const void *)&ip6ae.ipv6AddrAddress,
                    (const void *)&in6addr_any,
                    sizeof (ip6ae.ipv6AddrAddress)) == 0)
             continue;
+        entry = netsnmp_access_ipaddress_entry_create();
+        if (entry == NULL)
+            return (-1);    
 
         ip6ae.ipv6AddrIfIndex.o_bytes[ip6ae.ipv6AddrIfIndex.o_length] = '\0';
         DEBUGMSGTL(("access:ipaddress:container", "found if %s\n",
@@ -271,7 +277,7 @@ _load_v6(netsnmp_container *container, int idx_offset)
 
         entry->ns_ia_index = ++idx_offset;
         
-        DEBUGMSGTL(("access:ipaddress:container", "insert if %d, addrlen %d\n", 
+        DEBUGMSGTL(("access:ipaddress:container", "insert if %" NETSNMP_PRIo "u, addrlen %d\n", 
                     entry->if_index, entry->ia_address_len));
 
         if (CONTAINER_INSERT(container, entry) < 0) {

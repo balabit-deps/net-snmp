@@ -4,6 +4,7 @@
  */
 
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #include "route_headers.h"
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
@@ -12,6 +13,11 @@
 #include "ipCidrRouteTable_access.h"
 
 #include "var_route.h"
+
+netsnmp_feature_require(oid_stash)
+netsnmp_feature_require(get_routes)
+netsnmp_feature_require(oid_stash_get_data)
+netsnmp_feature_require(oid_stash_add_data)
 
 static netsnmp_oid_stash_node *undoStorage;
 
@@ -99,7 +105,7 @@ initialize_table_ipCidrRouteTable(void)
      */
     DEBUGMSGTL(("initialize_table_ipCidrRouteTable",
                 "Registering table ipCidrRouteTable as a table iterator\n"));
-    netsnmp_register_table_iterator(my_handler, iinfo);
+    netsnmp_register_table_iterator2(my_handler, iinfo);
 }
 
 /** Initializes the ipCidrRouteTable module */
@@ -649,8 +655,7 @@ ipCidrRouteTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                         netsnmp_oid_stash_add_data(&undoStorage,
                                                    suffix, suffix_len, ui);
                     }
@@ -666,8 +671,7 @@ ipCidrRouteTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                         netsnmp_oid_stash_add_data(&undoStorage,
                                                    suffix, suffix_len, ui);
                     }
@@ -683,8 +687,7 @@ ipCidrRouteTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                         netsnmp_oid_stash_add_data(&undoStorage,
                                                    suffix, suffix_len, ui);
                     }
@@ -701,8 +704,7 @@ ipCidrRouteTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                         netsnmp_oid_stash_add_data(&undoStorage,
                                                    suffix, suffix_len, ui);
                     }
@@ -718,8 +720,7 @@ ipCidrRouteTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                         netsnmp_oid_stash_add_data(&undoStorage,
                                                    suffix, suffix_len, ui);
                     }
@@ -735,8 +736,7 @@ ipCidrRouteTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                         netsnmp_oid_stash_add_data(&undoStorage,
                                                    suffix, suffix_len, ui);
                     }
@@ -752,8 +752,7 @@ ipCidrRouteTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                         netsnmp_oid_stash_add_data(&undoStorage,
                                                    suffix, suffix_len, ui);
                     }
@@ -769,8 +768,7 @@ ipCidrRouteTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                         netsnmp_oid_stash_add_data(&undoStorage,
                                                    suffix, suffix_len, ui);
                     }
@@ -786,8 +784,7 @@ ipCidrRouteTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                         netsnmp_oid_stash_add_data(&undoStorage,
                                                    suffix, suffix_len, ui);
                     }
@@ -803,8 +800,7 @@ ipCidrRouteTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                         netsnmp_oid_stash_add_data(&undoStorage,
                                                    suffix, suffix_len, ui);
                     }

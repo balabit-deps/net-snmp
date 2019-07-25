@@ -14,6 +14,7 @@
 
 
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #if HAVE_IO_H
 #include <io.h>
 #endif
@@ -49,6 +50,10 @@
 #include "snmpd.h"
 #include "agentx/protocol.h"
 #include "agentx/master_admin.h"
+
+netsnmp_feature_require(handler_mark_requests_as_delegated)
+netsnmp_feature_require(unix_socket_paths)
+netsnmp_feature_require(free_agent_snmp_session_by_session)
 
 void
 real_init_master(void)
@@ -118,7 +123,6 @@ real_init_master(void)
          *  Let 'snmp_open' interpret the descriptor.
          */
         sess.local_port = AGENTX_PORT;      /* Indicate server & set default port */
-        sess.remote_port = 0;
         sess.callback = handle_master_agentx_packet;
         errno = 0;
         t = netsnmp_transport_open_server("agentx", sess.peername);
@@ -214,6 +218,9 @@ agentx_got_response(int operation,
     if (!cache) {
         DEBUGMSGTL(("agentx/master", "response too late on session %8p\n",
                     session));
+        /* response is too late, free the cache */
+        if (magic)
+            netsnmp_free_delegated_cache((netsnmp_delegated_cache*) magic);
         return 0;
     }
     requests = cache->requests;
@@ -221,8 +228,8 @@ agentx_got_response(int operation,
     switch (operation) {
     case NETSNMP_CALLBACK_OP_TIMED_OUT:{
             void           *s = snmp_sess_pointer(session);
-            DEBUGMSGTL(("agentx/master", "timeout on session %8p\n",
-                        session));
+            DEBUGMSGTL(("agentx/master", "timeout on session %8p req=0x%x\n",
+                        session, (unsigned)reqid));
 
             netsnmp_handler_mark_requests_as_delegated(requests,
                                        REQUEST_IS_NOT_DELEGATED);
@@ -366,9 +373,9 @@ agentx_got_response(int operation,
             DEBUGMSGOID(("agentx/master", var->name, var->name_length));
             DEBUGMSG(("agentx/master", "\n"));
             if (netsnmp_ds_get_boolean(NETSNMP_DS_APPLICATION_ID, NETSNMP_DS_AGENT_VERBOSE)) {
-                DEBUGMSGTL(("snmp_agent", "    >> "));
-                DEBUGMSGVAR(("snmp_agent", var));
-                DEBUGMSG(("snmp_agent", "\n"));
+                DEBUGMSGTL(("agentx/master", "    >> "));
+                DEBUGMSGVAR(("agentx/master", var));
+                DEBUGMSG(("agentx/master", "\n"));
             }
 
             /*
@@ -460,6 +467,7 @@ agentx_master_handler(netsnmp_mib_handler *handler,
         pdu = snmp_pdu_create(AGENTX_MSG_GETNEXT);
         break;
 
+#ifndef NETSNMP_NO_WRITE_SUPPORT
     case MODE_SET_RESERVE1:
         pdu = snmp_pdu_create(AGENTX_MSG_TESTSET);
         break;
@@ -483,6 +491,7 @@ agentx_master_handler(netsnmp_mib_handler *handler,
     case MODE_SET_FREE:
         pdu = snmp_pdu_create(AGENTX_MSG_CLEANUPSET);
         break;
+#endif /* !NETSNMP_NO_WRITE_SUPPORT */
 
     default:
         snmp_log(LOG_WARNING,
@@ -524,7 +533,7 @@ agentx_master_handler(netsnmp_mib_handler *handler,
 
             if (snmp_oid_compare(nptr, nlen, request->subtree->start_a,
                                  request->subtree->start_len) < 0) {
-                DEBUGMSGTL(("agentx/master","inexact request preceeding region ("));
+                DEBUGMSGTL(("agentx/master","inexact request preceding region ("));
                 DEBUGMSGOID(("agentx/master", request->subtree->start_a,
                              request->subtree->start_len));
                 DEBUGMSG(("agentx/master", ")\n"));
@@ -594,11 +603,13 @@ agentx_master_handler(netsnmp_mib_handler *handler,
     /*
      * send the requests out.
      */
-    DEBUGMSGTL(("agentx", "sending pdu (req=0x%x,trans=0x%x,sess=0x%x)\n",
+    DEBUGMSGTL(("agentx/master", "sending pdu (req=0x%x,trans=0x%x,sess=0x%x)\n",
                 (unsigned)pdu->reqid, (unsigned)pdu->transid, (unsigned)pdu->sessid));
     result = snmp_async_send(ax_session, pdu, agentx_got_response, cb_data);
     if (result == 0) {
         snmp_free_pdu(pdu);
+        if (cb_data)
+            netsnmp_free_delegated_cache((netsnmp_delegated_cache*) cb_data);
     }
 
     return SNMP_ERR_NOERROR;

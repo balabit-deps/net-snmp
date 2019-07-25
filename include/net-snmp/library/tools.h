@@ -3,6 +3,11 @@
  * @defgroup util Memory Utility Routines
  * @ingroup library
  * @{
+ *
+ * Portions of this file are copyrighted by:
+ * Copyright (c) 2016 VMware, Inc. All rights reserved.
+ * Use is subject to license terms specified in the COPYING file
+ * distributed with the Net-SNMP package.
  */
 
 #ifndef _TOOLS_H
@@ -113,7 +118,7 @@ extern          "C" {
  *  Expands to string with value of the s. 
  *  If s is macro, the resulting string is value of the macro.
  *  Example: 
- *   #define TEST 1234
+ *   \#define TEST 1234
  *   SNMP_MACRO_VAL_TO_STR(TEST) expands to "1234"
  *   SNMP_MACRO_VAL_TO_STR(TEST+1) expands to "1234+1"
  */
@@ -141,25 +146,6 @@ extern          "C" {
 		rval = SNMPERR_GENERR;	\
 		goto l ;		\
 	}
-
-    /*
-     * DIFFTIMEVAL
-     *      Set <diff> to the difference between <now> (current) and <then> (past).
-     *
-     * ASSUMES that all inputs are (struct timeval)'s.
-     * Cf. system.c:calculate_time_diff().
-     */
-#define DIFFTIMEVAL(now, then, diff) 			\
-{							\
-	now.tv_sec--;					\
-	now.tv_usec += 1000000L;			\
-	diff.tv_sec  = now.tv_sec  - then.tv_sec;	\
-	diff.tv_usec = now.tv_usec - then.tv_usec;	\
-	if (diff.tv_usec > 1000000L){			\
-		diff.tv_usec -= 1000000L;		\
-		diff.tv_sec++;				\
-	}						\
-}
 
 /**
  * Compute res = a + b.
@@ -197,17 +183,6 @@ extern          "C" {
     }                                                           \
 }
 
-
-    /*
-     * ISTRANSFORM
-     * ASSUMES the minimum length for ttype and toid.
-     */
-#define USM_LENGTH_OID_TRANSFORM	10
-
-#define ISTRANSFORM(ttype, toid)					\
-	!snmp_oid_compare(ttype, USM_LENGTH_OID_TRANSFORM,		\
-		usm ## toid ## Protocol, USM_LENGTH_OID_TRANSFORM)
-
 #define ENGINETIME_MAX	2147483647      /* ((2^31)-1) */
 #define ENGINEBOOT_MAX	2147483647      /* ((2^31)-1) */
 
@@ -226,7 +201,12 @@ extern          "C" {
     u_char         *malloc_random(size_t * size);
     u_char         *malloc_zero(size_t size);
     NETSNMP_IMPORT
-    int             memdup(u_char ** to, const void * from, size_t size);
+    void           *netsnmp_memdup(const void * from, size_t size);
+    NETSNMP_IMPORT
+    void *netsnmp_memdup_nt(const void *from, size_t from_len, size_t *to_len);
+
+    void            netsnmp_check_definedness(const void *packet,
+                                              size_t length);
 
     NETSNMP_IMPORT
     u_int           netsnmp_binary_to_hex(u_char ** dest, size_t *dest_len,
@@ -278,19 +258,33 @@ extern          "C" {
     NETSNMP_IMPORT
     void            atime_setMarker(marker_t pm);
     NETSNMP_IMPORT
+    void            netsnmp_get_monotonic_clock(struct timeval* tv);
+    NETSNMP_IMPORT
+    void            netsnmp_set_monotonic_marker(marker_t *pm);
+    NETSNMP_IMPORT
     long            atime_diff(const_marker_t first, const_marker_t second);
+    NETSNMP_IMPORT
     u_long          uatime_diff(const_marker_t first, const_marker_t second);       /* 1/1000th sec */
     NETSNMP_IMPORT
     u_long          uatime_hdiff(const_marker_t first, const_marker_t second);      /* 1/100th sec */
     NETSNMP_IMPORT
-    int             atime_ready(const_marker_t pm, int deltaT);
-    int             uatime_ready(const_marker_t pm, unsigned int deltaT);
+    int             atime_ready(const_marker_t pm, int delta_ms);
+    NETSNMP_IMPORT
+    int             netsnmp_ready_monotonic(const_marker_t pm, int delta_ms);
+    int             uatime_ready(const_marker_t pm, unsigned int delta_ms);
 
     int             marker_tticks(const_marker_t pm);
     int             timeval_tticks(const struct timeval *tv);
+    NETSNMP_IMPORT
     char            *netsnmp_getenv(const char *name);
+    NETSNMP_IMPORT
+    int             netsnmp_setenv(const char *envname, const char *envval,
+                                   int overwrite);
 
     int             netsnmp_addrstr_hton(char *ptr, size_t len);
+
+    NETSNMP_IMPORT
+    int             netsnmp_string_time_to_secs(const char *time_string);
 
 #ifdef __cplusplus
 }

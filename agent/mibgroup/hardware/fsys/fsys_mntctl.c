@@ -18,7 +18,7 @@
 #endif
 
 
-int
+static int
 _fsys_remote( char *device, int type, char *host )
 {
     if (( type == NETSNMP_FS_TYPE_NFS) ||
@@ -28,7 +28,7 @@ _fsys_remote( char *device, int type, char *host )
         return 0;
 }
 
-int
+static int
 _fsys_type( int type)
 {
     DEBUGMSGTL(("fsys:type", "Classifying %d\n", type));
@@ -59,6 +59,9 @@ _fsys_type( int type)
 #ifdef MNT_PROCFS
         case MNT_PROCFS:
 #endif
+#ifdef MNT_ACFS
+        case MNT_ACFS:
+#endif
         case MNT_SFS:
         case MNT_CACHEFS:
             return NETSNMP_FS_TYPE_OTHER;
@@ -81,7 +84,7 @@ netsnmp_fsys_arch_init( void )
 void
 netsnmp_fsys_arch_load( void )
 {
-    int  ret  = 0;
+    int  ret  = 0, i = 0;
     uint size = 0;
 
     struct vmount *aixmnt, *aixcurr;
@@ -93,7 +96,7 @@ netsnmp_fsys_arch_load( void )
     /*
      * Retrieve information about the currently mounted filesystems...
      */
-    ret = mntctl(MCTL_QUERY, sizeof(uint), &size);
+    ret = mntctl(MCTL_QUERY, sizeof(uint), (void *) &size);
     if ( ret != 0 || size<=0 ) {
         snmp_log_perror( "initial mntctl failed" );
         return;
@@ -105,7 +108,7 @@ netsnmp_fsys_arch_load( void )
         return;
     }
 
-    ret = mntctl(MCTL_QUERY, size, aixmnt );
+    ret = mntctl(MCTL_QUERY, size, (void *) aixmnt);
     if ( ret <= 0 ) {
         free(aixmnt);
         snmp_log_perror( "main mntctl failed" );
@@ -118,19 +121,19 @@ netsnmp_fsys_arch_load( void )
      * ... and insert this into the filesystem container.
      */
 
-    for ( aixcurr  = aixmnt;
-         (aixcurr-aixmnt) >= size;
-          aixcurr  = (char*)aixcurr + aixcurr->vmt_length ) {
+    for (i = 0;
+         i < ret;
+         i++, aixcurr = (struct vmount *) ((char*)aixcurr + aixcurr->vmt_length) ) {
 
-        path = vmt2dataptr( aixcurr, VMT_OBJECT );
+        path = vmt2dataptr( aixcurr, VMT_STUB );
         entry = netsnmp_fsys_by_path( path, NETSNMP_FS_FIND_CREATE );
         if (!entry) {
             continue;
         }
 
-        strncpy( entry->path,   path,    sizeof( entry->path   ));
-        strncpy( entry->device, vmt2dataptr( aixcurr, VMT_STUB),
-                                         sizeof( entry->device ));
+        strlcpy(entry->path, path, sizeof(entry->path));
+        strlcpy(entry->device, vmt2dataptr(aixcurr, VMT_OBJECT),
+                sizeof(entry->device));
         entry->type   = _fsys_type( aixcurr->vmt_gfstype );
 
         if (!(entry->type & _NETSNMP_FS_TYPE_SKIP_BIT))
@@ -144,8 +147,7 @@ netsnmp_fsys_arch_load( void )
          *  The root device is presumably bootable.
          *  Other partitions probably aren't!
          */
-        if ((entry->path[0] == '/') &&
-            (entry->path[1] == '\0'))
+        if ((entry->path[0] == '/') && (entry->path[1] == '\0'))
             entry->flags |= NETSNMP_FS_FLAG_BOOTABLE;
 
         /*
@@ -161,7 +163,7 @@ netsnmp_fsys_arch_load( void )
             continue;
 
         if ( statfs( entry->path, &stat_buf ) < 0 ) {
-            snprintf( tmpbuf, sizeof(tmpbuf), "Cannot statfs %s\n", entry->path );
+            snprintf( tmpbuf, sizeof(tmpbuf), "Cannot statfs %s", entry->path );
             snmp_log_perror( tmpbuf );
             continue;
         }
@@ -171,6 +173,7 @@ netsnmp_fsys_arch_load( void )
         entry->avail =  stat_buf.f_bavail;
         entry->inums_total = stat_buf.f_files;
         entry->inums_avail = stat_buf.f_ffree;
+        netsnmp_fsys_calculate32(entry);
     }
     free(aixmnt);
     aixmnt  = NULL;

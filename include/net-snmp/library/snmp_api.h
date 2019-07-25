@@ -7,6 +7,11 @@
  * Copyright © 2003 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms specified in the COPYING file
  * distributed with the Net-SNMP package.
+ *
+ * Portions of this file are copyrighted by:
+ * Copyright (c) 2016 VMware, Inc. All rights reserved.
+ * Use is subject to license terms specified in the COPYING file
+ * distributed with the Net-SNMP package.
  */
 #ifndef SNMP_API_H
 #define SNMP_API_H
@@ -29,6 +34,8 @@
 #include <net-snmp/output_api.h>
 #include <net-snmp/pdu_api.h>
 #include <net-snmp/session_api.h>
+
+#include <net-snmp/net-snmp-features.h>
 
 #ifndef DONT_SHARE_ERROR_WITH_OTHER_THREADS
 #define SET_SNMP_ERROR(x) snmp_errno=(x)
@@ -76,8 +83,8 @@ typedef struct request_list {
     void           *cb_data;        /* user callback data per request (NULL if unused) */
     int             retries;        /* Number of retries */
     u_long          timeout;        /* length to wait for timeout */
-    struct timeval  time;   /* Time this request was made */
-    struct timeval  expire; /* time this request is due to expire */
+    struct timeval  timeM;   /* Time this request was made [monotonic clock] */
+    struct timeval  expireM; /* Time this request is due to expire [monotonic clock]. */
     struct snmp_session *session;
     netsnmp_pdu    *pdu;    /* The pdu for this request
 			     * (saved so it can be retransmitted */
@@ -107,16 +114,17 @@ typedef struct request_list {
 #else
 #define SNMP_DEFAULT_AUTH_PROTO     usmHMACSHA1AuthProtocol
 #endif
-#define SNMP_DEFAULT_AUTH_PROTOLEN  USM_LENGTH_OID_TRANSFORM
+#define SNMP_DEFAULT_AUTH_PROTOLEN  OID_LENGTH(SNMP_DEFAULT_AUTH_PROTO)
 #ifndef NETSNMP_DISABLE_DES
 #define SNMP_DEFAULT_PRIV_PROTO     usmDESPrivProtocol
 #else
 #define SNMP_DEFAULT_PRIV_PROTO     usmAESPrivProtocol
 #endif
-#define SNMP_DEFAULT_PRIV_PROTOLEN  USM_LENGTH_OID_TRANSFORM
+#define SNMP_DEFAULT_PRIV_PROTOLEN  OID_LENGTH(SNMP_DEFAULT_PRIV_PROTO)
 
     NETSNMP_IMPORT void     snmp_set_detail(const char *);
 
+#define SNMP_MAX_RCV_MSG_SIZE      65536
 #define SNMP_MAX_MSG_SIZE          1472 /* ethernet MTU minus IP/UDP header */
 #define SNMP_MAX_MSG_V3_HDRS       (4+3+4+7+7+3+7+16)   /* fudge factor=16 */
 #define SNMP_MAX_ENG_SIZE          32
@@ -139,15 +147,22 @@ typedef struct request_list {
     /*
      * to determine type of Report from varbind_list 
      */
-#define REPORT_STATS_LEN 9
+#define REPORT_STATS_LEN  9	/* Length of prefix for MPD/USM report statistic objects */
+#define REPORT_STATS_LEN2 8	/* Length of prefix for Target report statistic objects */
+/* From SNMP-MPD-MIB */
 #define REPORT_snmpUnknownSecurityModels_NUM 1
-#define REPORT_snmpInvalidMsgs_NUM 2
+#define REPORT_snmpInvalidMsgs_NUM           2
+#define REPORT_snmpUnknownPDUHandlers_NUM    3
+/* From SNMP-USER-BASED-SM-MIB */
 #define REPORT_usmStatsUnsupportedSecLevels_NUM 1
 #define REPORT_usmStatsNotInTimeWindows_NUM 2
 #define REPORT_usmStatsUnknownUserNames_NUM 3
 #define REPORT_usmStatsUnknownEngineIDs_NUM 4
-#define REPORT_usmStatsWrongDigests_NUM 5
+#define REPORT_usmStatsWrongDigests_NUM     5
 #define REPORT_usmStatsDecryptionErrors_NUM 6
+/* From SNMP-TARGET-MIB */
+#define REPORT_snmpUnavailableContexts_NUM  4
+#define REPORT_snmpUnknownContexts_NUM      5
 
 #define SNMP_DETAIL_SIZE        512
 
@@ -158,6 +173,7 @@ typedef struct request_list {
 #define SNMP_FLAGS_STREAM_SOCKET   0x80
 #define SNMP_FLAGS_LISTENING       0x40 /* Server stream sockets only */
 #define SNMP_FLAGS_SUBSESSION      0x20
+#define SNMP_FLAGS_SHARED_SOCKET   0x10 /* subsession list=related sessions */
 #define SNMP_FLAGS_STRIKE2         0x02
 #define SNMP_FLAGS_STRIKE1         0x01
 
@@ -272,6 +288,9 @@ typedef struct request_list {
     NETSNMP_IMPORT void netsnmp_free(void *ptr);
     NETSNMP_IMPORT char *netsnmp_strdup(const char *s1);
 
+    NETSNMP_IMPORT long int netsnmp_random(void);
+    NETSNMP_IMPORT void netsnmp_srandom(unsigned int seed);
+
     /*
      * void
      * snmp_free_pdu(pdu)
@@ -319,8 +338,12 @@ typedef struct request_list {
 #define NETSNMP_CALLBACK_OP_SEND_FAILED		3
 #define NETSNMP_CALLBACK_OP_CONNECT		4
 #define NETSNMP_CALLBACK_OP_DISCONNECT		5
+#define NETSNMP_CALLBACK_OP_RESEND		6
+#define NETSNMP_CALLBACK_OP_SEC_ERROR		7
 
+    NETSNMP_IMPORT
     long            snmp_get_next_msgid(void);
+    NETSNMP_IMPORT
     long            snmp_get_next_reqid(void);
     NETSNMP_IMPORT
     long            snmp_get_next_sessid(void);
@@ -328,8 +351,12 @@ typedef struct request_list {
     long            snmp_get_next_transid(void);
 
     NETSNMP_IMPORT
+    int             netsnmp_max_send_msg_size(void);
+
+    NETSNMP_IMPORT
     int             snmp_oid_compare(const oid *, size_t, const oid *,
                                      size_t);
+    NETSNMP_IMPORT
     int             snmp_oid_ncompare(const oid *, size_t, const oid *,
                                       size_t, size_t);
     NETSNMP_IMPORT
@@ -345,6 +372,7 @@ typedef struct request_list {
     NETSNMP_IMPORT
     int             netsnmp_oid_equals(const oid *, size_t, const oid *,
                                        size_t);
+    NETSNMP_IMPORT
     int             netsnmp_oid_tree_equals(const oid *, size_t, const oid *,
                                             size_t);
     NETSNMP_IMPORT
@@ -355,26 +383,40 @@ typedef struct request_list {
                                             const oid * in_name2, size_t len2);
     NETSNMP_IMPORT
     void            init_snmp(const char *);
+
+    int
+    snmp_build(u_char ** pkt, size_t * pkt_len, size_t * offset,
+               netsnmp_session * pss, netsnmp_pdu *pdu);
+
+    NETSNMP_IMPORT
     u_char         *snmp_pdu_build(netsnmp_pdu *, u_char *, size_t *);
 #ifdef NETSNMP_USE_REVERSE_ASNENCODING
+    NETSNMP_IMPORT
     u_char         *snmp_pdu_rbuild(netsnmp_pdu *, u_char *, size_t *);
 #endif
+    NETSNMP_IMPORT
     int             snmpv3_parse(netsnmp_pdu *, u_char *, size_t *,
                                  u_char **, netsnmp_session *);
+    NETSNMP_IMPORT
     int             snmpv3_packet_build(netsnmp_session *,
                                         netsnmp_pdu *pdu, u_char * packet,
                                         size_t * out_length,
                                         u_char * pdu_data,
                                         size_t pdu_data_len);
+    NETSNMP_IMPORT
     int             snmpv3_packet_rbuild(netsnmp_session *,
                                          netsnmp_pdu *pdu, u_char * packet,
                                          size_t * out_length,
                                          u_char * pdu_data,
                                          size_t pdu_data_len);
+    NETSNMP_IMPORT
     int             snmpv3_make_report(netsnmp_pdu *pdu, int error);
+    NETSNMP_IMPORT
     int             snmpv3_get_report_type(netsnmp_pdu *pdu);
+    NETSNMP_IMPORT
     int             snmp_pdu_parse(netsnmp_pdu *pdu, u_char * data,
                                    size_t * length);
+    NETSNMP_IMPORT
     u_char         *snmpv3_scopedPDU_parse(netsnmp_pdu *pdu, u_char * cp,
                                            size_t * length);
     NETSNMP_IMPORT
@@ -390,15 +432,28 @@ typedef struct request_list {
                                  const char *);
     NETSNMP_IMPORT
     oid            *snmp_duplicate_objid(const oid * objToCopy, size_t);
+
+#ifndef NETSNMP_FEATURE_REMOVE_STATISTICS
     NETSNMP_IMPORT
     u_int           snmp_increment_statistic(int which);
     NETSNMP_IMPORT
     u_int           snmp_increment_statistic_by(int which, int count);
     NETSNMP_IMPORT
     u_int           snmp_get_statistic(int which);
+    NETSNMP_IMPORT
     void            snmp_init_statistics(void);
+#else /* NETSNMP_FEATURE_REMOVE_STATISTICS */
+
+/* allow code to continue referencing API even if statistics are removed */
+#define snmp_increment_statistic(X)
+#define snmp_increment_statistic_by(X,Y)
+#define snmp_init_statistics()
+
+#endif
+
+    NETSNMP_IMPORT
     int             create_user_from_session(netsnmp_session * session);
-    int snmp_get_fd_for_session(struct snmp_session *sessp);
+    NETSNMP_IMPORT
     int snmpv3_probe_contextEngineID_rfc5343(void *slp,
                                              netsnmp_session *session);
 
@@ -407,12 +462,14 @@ typedef struct request_list {
      */
 #ifdef NETSNMP_USE_REVERSE_ASNENCODING
 
+    NETSNMP_IMPORT
     int        snmpv3_packet_realloc_rbuild(u_char ** pkt, size_t * pkt_len,
                                      size_t * offset,
                                      netsnmp_session * session,
                                      netsnmp_pdu *pdu, u_char * pdu_data,
                                      size_t pdu_data_len);
 
+    NETSNMP_IMPORT
     int        snmp_pdu_realloc_rbuild(u_char ** pkt, size_t * pkt_len,
                                 size_t * offset, netsnmp_pdu *pdu);
 #endif
@@ -459,6 +516,8 @@ struct netsnmp_transport_s;
     void            netsnmp_sess_log_error(int priority,
                                            const char *prog_string,
                                            netsnmp_session * ss);
+
+    NETSNMP_IMPORT
     const char *    snmp_pdu_type(int type);
 
     /*
@@ -468,6 +527,7 @@ struct netsnmp_transport_s;
 
     NETSNMP_IMPORT
     struct netsnmp_transport_s *snmp_sess_transport(void *);
+    NETSNMP_IMPORT
     void            snmp_sess_transport_set(void *,
 					    struct netsnmp_transport_s *);
 
@@ -480,7 +540,7 @@ struct netsnmp_transport_s;
                                            struct netsnmp_transport_s *transport);
 
     /*
-     * EXPERIMENTAL API EXTENSIONS ------------------------------------------ 
+     * EXTENDED SESSION API ------------------------------------------ 
      * 
      * snmp_sess_add_ex, snmp_sess_add, snmp_add 
      * 
@@ -492,6 +552,7 @@ struct netsnmp_transport_s;
      * 
      */
 
+    NETSNMP_IMPORT
     void           *snmp_sess_add_ex(netsnmp_session *,
                                      struct netsnmp_transport_s *,
                                      int (*fpre_parse) (netsnmp_session *,
@@ -518,6 +579,7 @@ struct netsnmp_transport_s;
                                                                   void *,
                                                                   size_t));
 
+    NETSNMP_IMPORT
     void           *snmp_sess_add(netsnmp_session *,
                                   struct netsnmp_transport_s *,
                                   int (*fpre_parse) (netsnmp_session *,
@@ -677,6 +739,16 @@ struct netsnmp_transport_s;
 #define  NETSNMP_STAT_MAX_STATS              (STAT_TLSTM_STATS_END+1)
 /** backwards compatability */
 #define MAX_STATS NETSNMP_STAT_MAX_STATS
+
+    /*
+     * Internal: The list of active/open sessions.
+     */
+    struct session_list {
+       struct session_list *next;
+       netsnmp_session *session;
+       netsnmp_transport *transport;
+       struct snmp_internal_session *internal;
+    };
 
 #ifdef __cplusplus
 }

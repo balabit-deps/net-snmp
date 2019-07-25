@@ -4,11 +4,16 @@
  */
 
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
 #include "netSnmpHostsTable.h"
 #include "netSnmpHostsTable_checkfns.h"
 #include "netSnmpHostsTable_access.h"
+
+netsnmp_feature_require(oid_stash)
+netsnmp_feature_require(oid_stash_get_data)
+netsnmp_feature_require(oid_stash_add_data)
 
 static netsnmp_oid_stash_node *undoStorage = NULL;
 static netsnmp_oid_stash_node *commitStorage = NULL;
@@ -60,6 +65,8 @@ initialize_table_netSnmpHostsTable(void)
     if (!my_handler || !table_info || !iinfo) {
         snmp_log(LOG_ERR,
                  "malloc failed in initialize_table_netSnmpHostsTable");
+        free(iinfo);
+        free(table_info);
         return; /** Serious error. */
     }
 
@@ -92,7 +99,7 @@ initialize_table_netSnmpHostsTable(void)
      */
     DEBUGMSGTL(("initialize_table_netSnmpHostsTable",
                 "Registering table netSnmpHostsTable as a table iterator\n"));
-    netsnmp_register_table_iterator(my_handler, iinfo);
+    netsnmp_register_table_iterator2(my_handler, iinfo);
 }
 
 /** Initializes the netSnmpHostsTable module */
@@ -254,8 +261,7 @@ netSnmpHostsTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                     }
 
                     /** check the new value, possibly against the
@@ -293,8 +299,7 @@ netSnmpHostsTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                     }
 
                     /** check the new value, possibly against the
@@ -331,8 +336,7 @@ netSnmpHostsTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                     }
 
                     /** check the new value, possibly against the
@@ -369,8 +373,7 @@ netSnmpHostsTable_handler(netsnmp_mib_handler *handler,
                     if (retval) {
                         ui = SNMP_MALLOC_STRUCT(undoInfo);
                         ui->len = retval_len;
-                        memdup((u_char **) & ui->ptr,
-                               (u_char *) retval, ui->len);
+                        ui->ptr = netsnmp_memdup(retval, ui->len);
                     }
 
                     /** check the new value, possibly against the

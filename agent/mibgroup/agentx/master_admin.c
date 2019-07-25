@@ -2,6 +2,7 @@
  *  AgentX Administrative request handling
  */
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 
 #include <sys/types.h>
 #ifdef HAVE_STRING_H
@@ -31,9 +32,12 @@
 
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
+#include "agent_global_vars.h"
 
 #include "agentx/protocol.h"
 #include "agentx/client.h"
+#include "agentx/subagent.h"
+#include "agentx/master_admin.h"
 
 #include <net-snmp/agent/agent_index.h>
 #include <net-snmp/agent/agent_trap.h>
@@ -41,6 +45,11 @@
 #include <net-snmp/agent/agent_sysORTable.h>
 #include "master.h"
 
+netsnmp_feature_require(unregister_mib_table_row)
+netsnmp_feature_require(trap_vars_with_context)
+netsnmp_feature_require(calculate_sectime_diff)
+netsnmp_feature_require(allocate_globalcacheid)
+netsnmp_feature_require(remove_index)
 
 netsnmp_session *
 find_agentx_session(netsnmp_session * session, int sessid)
@@ -58,7 +67,6 @@ int
 open_agentx_session(netsnmp_session * session, netsnmp_pdu *pdu)
 {
     netsnmp_session *sp;
-    struct timeval  now;
 
     DEBUGMSGTL(("agentx/master", "open %8p\n", session));
     sp = (netsnmp_session *) malloc(sizeof(netsnmp_session));
@@ -98,8 +106,7 @@ open_agentx_session(netsnmp_session * session, netsnmp_pdu *pdu)
                                                  name_length);
     sp->securityAuthProtoLen = pdu->variables->name_length;
     sp->securityName = strdup((char *) pdu->variables->val.string);
-    gettimeofday(&now, NULL);
-    sp->engineTime = calculate_sectime_diff(&now, netsnmp_get_agent_starttime());
+    sp->engineTime = (uint32_t)((netsnmp_get_agent_runtime() + 50) / 100) & 0x7fffffffL;
 
     sp->subsession = session;   /* link back to head */
     sp->flags |= SNMP_FLAGS_SUBSESSION;
@@ -129,11 +136,16 @@ close_agentx_session(netsnmp_session * session, int sessid)
          * requests, so that the delegated request will be completed and
          * further requests can be processed
          */
-        netsnmp_remove_delegated_requests_for_session(session);
+	while (netsnmp_remove_delegated_requests_for_session(session)) {
+		DEBUGMSGTL(("agentx/master", "Continue removing delegated reqests\n"));
+	}
+
         if (session->subsession != NULL) {
             netsnmp_session *subsession = session->subsession;
             for(; subsession; subsession = subsession->next) {
-                netsnmp_remove_delegated_requests_for_session(subsession);
+                while (netsnmp_remove_delegated_requests_for_session(subsession)) {
+			DEBUGMSGTL(("agentx/master", "Continue removing delegated subsession reqests\n"));
+		}
             }
         }
                 
@@ -149,6 +161,7 @@ close_agentx_session(netsnmp_session * session, int sessid)
     for (sp = session->subsession; sp != NULL; sp = sp->next) {
 
         if (sp->sessid == sessid) {
+            netsnmp_remove_delegated_requests_for_session(sp);
             unregister_mibs_by_session(sp);
             unregister_index_by_session(sp);
             unregister_sysORTable_by_session(sp);
@@ -225,7 +238,7 @@ register_agentx_list(netsnmp_session * session, netsnmp_pdu *pdu)
      * register mib. Note that for failure cases, the registration info
      * (reg) will be freed, and thus is no longer a valid pointer.
      */
-    switch (netsnmp_register_mib(buf, NULL, 0, 1,
+    switch (netsnmp_register_mib(buf, NULL, 0, 0,
                                  pdu->variables->name,
                                  pdu->variables->name_length,
                                  pdu->priority, pdu->range_subid, ubound,
@@ -404,9 +417,6 @@ agentx_notify(netsnmp_session * session, netsnmp_pdu *pdu)
 {
     netsnmp_session       *sp;
     netsnmp_variable_list *var;
-    int                    got_sysuptime = 0;
-    extern const oid       sysuptime_oid[], snmptrap_oid[];
-    extern const size_t    sysuptime_oid_len, snmptrap_oid_len;
 
     sp = find_agentx_session(session, pdu->sessid);
     if (sp == NULL)
@@ -418,7 +428,6 @@ agentx_notify(netsnmp_session * session, netsnmp_pdu *pdu)
 
     if (snmp_oid_compare(var->name, var->name_length,
                          sysuptime_oid, sysuptime_oid_len) == 0) {
-        got_sysuptime = 1;
         var = var->next_variable;
     }
 
@@ -477,6 +486,10 @@ handle_master_agentx_packet(int operation,
          * Shut this session down gracefully.  
          */
         close_agentx_session(session, -1);
+        return 1;
+    } else if (operation == NETSNMP_CALLBACK_OP_CONNECT) {
+        DEBUGMSGTL(("agentx/master",
+                    "transport connect on session %8p\n", session));
         return 1;
     } else if (operation != NETSNMP_CALLBACK_OP_RECEIVED_MESSAGE) {
         DEBUGMSGTL(("agentx/master", "unexpected callback op %d\n",

@@ -3,16 +3,186 @@ Please see the CHANGES file for a more detailed list of specific bugs/patches
 that have been fixed/applied, and the ChangeLog file for a comprehensive
 listing of all changes made to the code.
 
-*5.6.1*
-    General:
-      - The DTLS and TLS transports and the TSM security model are no
-        longer "beta" (they've undergone rigorous interoperability testing).
-      - Many Bug Fixes (see the CHANGES and ChangeLog files for full details)
+*5.8*
+    snmplib:
+      - TLS/DTLS fixes
+      - fix usm keychanges for new algorithms and longer keylengths
+      - IP address formatting fixes
+      - BUG: 2592: from Stuart Kendrick - increase MAXTC to 16384
+      - add new sha2 auth protocols
+      - Restore AES-192 and AES-256 privacy protocols - from
+	draft-blumenthal-aes-usm-04 (precursor to RFC 3826)
+        - Use OIDs from http://www.snmp.com/eso/esoConsortiumMIB.txt
+        - Some code borrowed from PATCH 1346, thanks to
+          Alexander Ivanov and Vladimir Sukhorukov.
+      - BUG: 2622: Fix excessive indents in log file
+      - new config tokens:
+        - sendMessageMaxSize
+        - disableSNMPv1 / disableSNMPv2c
+      - new api for dynamic debug log level (netsnmp_set_debug_log_level)
 
     snmpd:
-      - 0 Patch 3141462: from fenner: fix agentx subagent issues with
-	multiple-object requests
-      - Patch from Niels to fix VACM persistant storage.
+      - SNMP-TARGET-MIB: Fix snmpTargetAddrTAddress
+      - Com2sec and com2sec6 SOURCE values may deny sources as well as
+        permit.
+      - allow trap sinks to set Target-MIB characteristics (name, tag, profile)
+      - add source addr/port option to trapsink/trap2sink/informsink
+      - packet filtering by source ip (enableSourceFiltering/filtersource)
+      - several getbulk handling improvements
+      - several new APIs introduced for run-time configuration of agent:
+        - netsnmp_vacm_simple_usm_add/del
+        - usm_create_usmUser_*
+        - netsnmp_udp_com2SecEntry_create/netsnmp_udp_com2SecList_remove
+        - netsnmp_agent_listen_on to open agent port
+
+    Win32:
+      - Add support for the DTLS-UDP and TLS-TCP transports
+
+    scripts:
+      - A new 'checkbandwidth' script to check host min/max bandwidth
+
+    snmptranslate:
+      - Introduce bulk translation mode The special argument "-" causes
+	snmptranslate to enter bulk translation mode, in which it expects
+	one OID per line.  Whitespace is treated as the end of the OID, and
+	only that portion of the line is replaced, meaning that this can be
+	used to translate, e.g., "snmpwalk" output without the proper MIBs
+	loaded: snmptranslate -m all -OX < numeric.txt > symbolic.txt
+
+    building:
+      - Add Travis and Appveyor CI support
+      - IPv6 support is now compiled by default.  If you need an IPv4-only
+	agent, use --disable-ipv6.
+      - Fixed/improved support for several non-Linux platforms
+      - Many fixes found by Coverity anf Fortify scans
+
+*5.7.3*
+    Many many bug fixes and minor improvements
+
+    snmpd, snmptrapd and apps:
+      - Patch 2525: from Ryan Steinmetz: Fix argument length parsing of the
+	host resources mib
+      - Make ENV_SEPARATOR_CHAR configurable
+      - SECURITY: a denial of service attack vector was discovered on
+        the linux implementation of the ICMP-MIB.  This release fixes
+        this bug and all users are encouraged to update their SNMP
+        agent if they make use of the ICMP-MIB table objects.
+
+    perl:
+      - BUG: 2402: Add support for SNMPv3 traps
+
+    Windows:
+      - Port batch build infrastructure to Visual Studio 2010 and later
+	From Visual Studio 2010 on it is no longer possible to specify
+	include or library directories globally - these have to be
+	specified per project. Hence two additional menu entries in
+	build.bat that allow to specify these directories.
+      - Patch from Bart Van Assche to improve cygwin building
+
+*5.7.2*
+    snmp:
+      - BUG: 3526549: CVE-2012-2141 Array index error leading to crash
+
+    snmpd:
+      - BUG: 3532090: Fix high ifIndex values crashing hrDeviceDescr
+
+    building:
+      - PATCH: 2091156: correctly declare dependencies in Makefile. 'make
+        -j <N>' should work now. Backport this to V5-4 as it is needed for
+        correct operation in the single threaded case of make miblib as
+        well.
+
+    Many other miscellaneous minor bug fixes
+
+*5.7.1*
+
+  libnetsnmp:
+      - Fixed the mib-parsing-bug introduced shortly before 5.7
+
+  agent:
+      - fixed rounding errors for disk percentage calculations
+
+  openbsd:
+      - better support for recent openbsd releases
+
+  features:
+      - bug fixes with minimalist support after additional user feedback
+
+  Many other miscellaneous minor bug fixes
+
+*5.7*
+
+  snmpd:
+      - Delivery of data via regularily scheduled notifications.
+        (see "Data Delivery via Notfications" in snmpd.conf)
+      - Many time-based config options can take (m)ins, (h)ours, ... arguments
+        (see the snmpd.conf manual page)
+      - The PING and TRACEROUTE MIBs now compile and work-ish on linux
+        http://www.net-snmp.org/wiki/index.php/DISMAN
+      - Mib handlers can now implement a data_clone function for
+        cloning the myvoid structure variable to avoid dangling pointers
+      - Fixed persistent storage of VACM MIB configuration
+      - Multi-homed agents send UDP responses from the proper IP address
+      - The hrStorageTable implementation now supports large filesystems better
+      - optimizations for large route tables
+      - Added a deliveryByNotify config token for regular data delivery
+        (see the snmpd.conf manual page and the NET-SNMP-PERIODIC-NOTIFY-MIB)
+      - [PATCH 3141462]: fix agentx subagent issues with multiple-object requests
+      - [PATCH 3057093]: linux uses libpci for creating useful ifDescr strings
+      - [PATCH 3131397]: huge speedups of the TCP/UDP Tables
+
+  libnetsnmp:
+      - Removed the older CMU compatibility support
+      - The SSH transport is now configurable
+
+  TLS/DTLS support:
+      - The SNMP over DTLS transport now properly supports IPv6
+      - Introduced new configuration tokens: localCert/peerCert
+        (deprecating serverCert, clientCert, defX509ServerPub, defX509ClientPub)
+      - Various fixes for the TLS/DTLS transports
+
+  apps:
+      - Added a per-variable timed output support to snmpwalk using -CT
+      - snmpinform now correctly uses the local engineID for informs
+      - A number of mib2c bug fixes
+      - New snmp.conf tokens for timeouts and retries
+
+  building:
+      - New flags to reduce the amount of compiled code to bare minimums.
+        This is provided by a new generic feature marking/selection mechanism.
+        http://www.net-snmp.org/wiki/index.php/Feature_Marking_and_Selection
+      - It's now possible to build without SNMPv3/USM
+        (e.g., if you only want TLS/DTLS with SNMPv3/TSM)
+      - It's possible to build the suite with no SET support
+        configure using --enable-read-only
+      - It's possible to build the agent as a notify-only agent
+        configure using --enable-notify-only
+      - Added a script to test memory usage with various config options
+        (see the local/minimalist/sizetests script)
+      - Net-SNMP can now be built to perform local DNSSEC validation
+        (install DNSSEC-Tools' libval and use --with-local-dnssec-validation)
+
+  testing:
+      - a number of new API unit-tests have been added to the suite
+        (to run the tests: cd testing && ./RUNFULLTESTS -g unit-tests)
+      - The unit tests can be more easily run under valgrind
+        (See http://bit.ly/jsgRnv for details)
+
+  openbsd:
+      - Support for updating the routing table via SNMP
+
+  win32:
+      - The testing suite works better under win32 environments
+      - Many building fixes for the win32 environment(s)
+
+  solaris:
+      - Net-SNMP now supports the SCTP-MIB
+
+  DragonFlyBSD, FreeBSD8:
+      - Net-SNMP should now work on DragonFlyBSD and FreeBSD8
+
+  And of course:
+      - Many other bug fixes.  See the CHANGES and ChangeLog for details.
 
 *5.6*
 

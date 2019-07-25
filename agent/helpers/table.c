@@ -17,14 +17,24 @@
  * Copyright (C) 2007 Apple, Inc. All rights reserved.
  * Use is subject to license terms specified in the COPYING file
  * distributed with the Net-SNMP package.
+ *
+ * Portions of this file are copyrighted by:
+ * Copyright (c) 2016 VMware, Inc. All rights reserved.
+ * Use is subject to license terms specified in the COPYING file
+ * distributed with the Net-SNMP package.
  */
 
 #include <net-snmp/net-snmp-config.h>
 
+#include <net-snmp/net-snmp-features.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
 
 #include <net-snmp/agent/table.h>
+
+#ifndef NETSNMP_NO_WRITE_SUPPORT
+netsnmp_feature_require(oid_stash)
+#endif /* !NETSNMP_NO_WRITE_SUPPORT */
 
 #if HAVE_STRING_H
 #include <string.h>
@@ -33,6 +43,13 @@
 #endif
 
 #include <net-snmp/library/snmp_assert.h>
+
+netsnmp_feature_child_of(table_all, mib_helpers)
+
+netsnmp_feature_child_of(table_build_result, table_all)
+netsnmp_feature_child_of(table_get_or_create_row_stash, table_all)
+netsnmp_feature_child_of(registration_owns_table_info, table_all)
+netsnmp_feature_child_of(table_sparse, table_all)
 
 static void     table_helper_cleanup(netsnmp_agent_request_info *reqinfo,
                                      netsnmp_request_info *request,
@@ -105,6 +122,31 @@ netsnmp_get_table_handler(netsnmp_table_registration_info *tabreq)
     return ret;
 }
 
+/** Configures a handler such that table registration information is freed by
+ *  netsnmp_handler_free(). Should only be called if handler->myvoid points to
+ *  an object of type netsnmp_table_registration_info.
+ */
+void netsnmp_handler_owns_table_info(netsnmp_mib_handler *handler)
+{
+    netsnmp_assert(handler);
+    netsnmp_assert(handler->myvoid);
+    handler->data_clone
+	= (void *(*)(void *)) netsnmp_table_registration_info_clone;
+    handler->data_free
+	= (void (*)(void *)) netsnmp_table_registration_info_free;
+}
+
+/** Configures a handler such that table registration information is freed by
+ *  netsnmp_handler_free(). Should only be called if reg->handler->myvoid
+ *  points to an object of type netsnmp_table_registration_info.
+ */
+#ifndef NETSNMP_FEATURE_REMOVE_REGISTRATION_OWNS_TABLE_INFO
+void netsnmp_registration_owns_table_info(netsnmp_handler_registration *reg)
+{
+    if (reg)
+        netsnmp_handler_owns_table_info(reg->handler);
+}
+#endif /* NETSNMP_FEATURE_REMOVE_REGISTRATION_OWNS_TABLE_INFO */
 
 /** creates a table handler given the netsnmp_table_registration_info object,
  *  inserts it into the request chain and then calls
@@ -114,9 +156,14 @@ int
 netsnmp_register_table(netsnmp_handler_registration *reginfo,
                        netsnmp_table_registration_info *tabreq)
 {
-    int rc = netsnmp_inject_handler(reginfo, netsnmp_get_table_handler(tabreq));
-    if (SNMPERR_SUCCESS != rc)
-        return rc;
+    netsnmp_mib_handler *handler = netsnmp_get_table_handler(tabreq);
+    if (!handler ||
+        (netsnmp_inject_handler(reginfo, handler) != SNMPERR_SUCCESS)) {
+        snmp_log(LOG_ERR, "could not create table handler\n");
+        netsnmp_handler_free(handler);
+        netsnmp_handler_registration_free(reginfo);
+        return MIB_REGISTRATION_FAILED;
+    }
 
     return netsnmp_register_handler(reginfo);
 }
@@ -126,7 +173,6 @@ netsnmp_unregister_table(netsnmp_handler_registration *reginfo)
 {
     /* Locate "this" reginfo */
     /* SNMP_FREE(reginfo->myvoid); */
-    /* reginfo->myvoid = NULL; */
     return netsnmp_unregister_handler(reginfo);
 }
 
@@ -212,15 +258,20 @@ table_helper_handler(netsnmp_mib_handler *handler,
      * in the netsnmp_agent_request_info. 
      */
     if (netsnmp_agent_get_list_data(reqinfo, handler->next->handler_name)) {
+#ifndef NETSNMP_NO_WRITE_SUPPORT
         if (MODE_IS_SET(reqinfo->mode)) {
             return netsnmp_call_next_handler(handler, reginfo, reqinfo,
                                              requests);
         } else {
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
 /** XXX-rks: memory leak. add cleanup handler? */
             netsnmp_free_agent_data_sets(reqinfo);
+#ifndef NETSNMP_NO_WRITE_SUPPORT
         }
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
     }
 
+#ifndef NETSNMP_NO_WRITE_SUPPORT
     if ( MODE_IS_SET(reqinfo->mode) &&
          (reqinfo->mode != MODE_SET_RESERVE1)) {
         /*
@@ -236,6 +287,7 @@ table_helper_handler(netsnmp_mib_handler *handler,
             need_processing = 1;
     }
     else {
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
         /*
          * for GETS, only continue if we have at least one valid request.
          * for RESERVE1, only continue if we have indexes for all requests.
@@ -271,6 +323,7 @@ table_helper_handler(netsnmp_mib_handler *handler,
             continue;
         }
 
+#ifndef NETSNMP_NO_WRITE_SUPPORT
         if (reqinfo->mode == MODE_SET_RESERVE1) {
             DEBUGIF("helper:table:set") {
                 u_char         *buf = NULL;
@@ -298,6 +351,7 @@ table_helper_handler(netsnmp_mib_handler *handler,
                 }
             }
         }
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
 
         /*
          * check to make sure its in table range 
@@ -353,12 +407,17 @@ table_helper_handler(netsnmp_mib_handler *handler,
             /*
              *  Reject requests of the form 'myTable.N'   (N != 1)
              */
+#ifndef NETSNMP_NO_WRITE_SUPPORT
             if (reqinfo->mode == MODE_SET_RESERVE1)
                 table_helper_cleanup(reqinfo, request,
                                      SNMP_ERR_NOTWRITABLE);
-            else if (reqinfo->mode == MODE_GET)
+            else
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
+            if (reqinfo->mode == MODE_GET)
                 table_helper_cleanup(reqinfo, request,
                                      SNMP_NOSUCHOBJECT);
+            else
+                request->processed = 1; /* skip if next handler called */
             continue;
         }
 
@@ -428,12 +487,17 @@ table_helper_handler(netsnmp_mib_handler *handler,
                 /*
                  *  Reject requests of the form 'myEntry.N'   (invalid N)
                  */
+#ifndef NETSNMP_NO_WRITE_SUPPORT
                 if (reqinfo->mode == MODE_SET_RESERVE1)
                     table_helper_cleanup(reqinfo, request,
                                          SNMP_ERR_NOTWRITABLE);
-                else if (reqinfo->mode == MODE_GET)
+                else
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
+                if (reqinfo->mode == MODE_GET)
                     table_helper_cleanup(reqinfo, request,
                                          SNMP_NOSUCHOBJECT);
+                else
+                    request->processed = 1; /* skip if next handler called */
                 continue;
             }
             /*
@@ -499,8 +563,10 @@ table_helper_handler(netsnmp_mib_handler *handler,
              */
             if (reqinfo->mode == MODE_GET ) {
                 table_helper_cleanup(reqinfo, request, SNMP_NOSUCHOBJECT);
+#ifndef NETSNMP_NO_WRITE_SUPPORT
             } else if (reqinfo->mode == MODE_SET_RESERVE1 ) {
                 table_helper_cleanup(reqinfo, request, SNMP_ERR_NOTWRITABLE);
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
             }
             continue;
         }
@@ -623,6 +689,7 @@ table_helper_handler(netsnmp_mib_handler *handler,
             DEBUGMSGTL(("helper:table",
                         "invalid index(es) for table - skipping\n"));
 
+#ifndef NETSNMP_NO_WRITE_SUPPORT
             if ( MODE_IS_SET(reqinfo->mode) ) {
                 /*
                  * no point in continuing without indexes for set.
@@ -635,6 +702,7 @@ table_helper_handler(netsnmp_mib_handler *handler,
                 need_processing = 0; /* don't call next handler */
                 break;
             }
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
             table_helper_cleanup(reqinfo, request, SNMP_NOSUCHINSTANCE);
             continue;
         }
@@ -643,7 +711,9 @@ table_helper_handler(netsnmp_mib_handler *handler,
         ++need_processing;
 
     }                           /* for each request */
+#ifndef NETSNMP_NO_WRITE_SUPPORT
     }
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
 
     /*
      * bail if there is nothing for our child handlers
@@ -756,6 +826,7 @@ sparse_table_helper_handler(netsnmp_mib_handler *handler,
 
 /** create sparse table handler
  */
+#ifndef NETSNMP_FEATURE_REMOVE_TABLE_SPARSE
 netsnmp_mib_handler *
 netsnmp_sparse_table_handler_get(void)
 {
@@ -772,12 +843,11 @@ netsnmp_sparse_table_register(netsnmp_handler_registration *reginfo,
                        netsnmp_table_registration_info *tabreq)
 {
     netsnmp_mib_handler *handler1, *handler2;
-    int rc;
 
     handler1 = netsnmp_create_handler(SPARSE_TABLE_HANDLER_NAME,
                                      sparse_table_helper_handler);
     if (NULL == handler1)
-        return SNMP_ERR_GENERR;
+        return MIB_REGISTRATION_FAILED;
 
     handler2 = netsnmp_get_table_handler(tabreq);
     if (NULL == handler2 ) {
@@ -785,25 +855,25 @@ netsnmp_sparse_table_register(netsnmp_handler_registration *reginfo,
         return SNMP_ERR_GENERR;
     }
 
-    rc = netsnmp_inject_handler(reginfo, handler1);
-    if (SNMPERR_SUCCESS != rc) {
+    if (SNMPERR_SUCCESS != netsnmp_inject_handler(reginfo, handler1)) {
         netsnmp_handler_free(handler1);
         netsnmp_handler_free(handler2);
-        return rc;
+        return MIB_REGISTRATION_FAILED;
     }
 
-    rc = netsnmp_inject_handler(reginfo, handler2);
-    if (SNMPERR_SUCCESS != rc) {
+    if (SNMPERR_SUCCESS != netsnmp_inject_handler(reginfo, handler2)) {
         /** handler1 is in reginfo... remove and free?? */
         netsnmp_handler_free(handler2);
-        return rc;
+        return MIB_REGISTRATION_FAILED;
     }
 
     /** both handlers now in reginfo, so nothing to do on error */
     return netsnmp_register_handler(reginfo);
 }
+#endif /* NETSNMP_FEATURE_REMOVE_TABLE_SPARSE */
 
 
+#ifndef NETSNMP_FEATURE_REMOVE_TABLE_BUILD_RESULT
 /** Builds the result to be returned to the agent given the table information.
  *  Use this function to return results from lowel level handlers to
  *  the agent.  It takes care of building the proper resulting oid
@@ -836,7 +906,6 @@ netsnmp_table_build_result(netsnmp_handler_registration *reginfo,
 
     return SNMPERR_SUCCESS;
 }
-
 
 /** given a registration info object, a request object and the table
  *  info object it builds the request->requestvb->name oid from the
@@ -874,6 +943,7 @@ netsnmp_table_build_oid(netsnmp_handler_registration *reginfo,
 
     return SNMPERR_SUCCESS;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_TABLE_BUILD_RESULT */
 
 /** given a registration info object, a request object and the table
  *  info object it builds the request->requestvb->name oid from the
@@ -990,6 +1060,22 @@ netsnmp_check_getnext_reply(netsnmp_request_info *request,
         }
     }
     return 0;
+}
+
+netsnmp_table_registration_info *
+netsnmp_table_registration_info_clone(netsnmp_table_registration_info *tri)
+{
+    netsnmp_table_registration_info *copy;
+    copy = malloc(sizeof(*copy));
+    if (copy) {
+        *copy = *tri;
+        copy->indexes = snmp_clone_varbind(tri->indexes);
+        if (!copy->indexes) {
+            free(copy);
+            copy = NULL;
+        }
+    }
+    return copy;
 }
 
 void
@@ -1150,6 +1236,8 @@ netsnmp_table_helper_add_indexes(netsnmp_table_registration_info *tinfo,
     va_end(debugargs);
 }
 
+#ifndef NETSNMP_NO_WRITE_SUPPORT
+#ifndef NETSNMP_FEATURE_REMOVE_TABLE_GET_OR_CREATE_ROW_STASH
 static void
 _row_stash_data_list_free(void *ptr) {
     netsnmp_oid_stash_node **tmp = (netsnmp_oid_stash_node **)ptr;
@@ -1183,6 +1271,8 @@ netsnmp_table_get_or_create_row_stash(netsnmp_agent_request_info *reqinfo,
     }
     return stashp;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_TABLE_GET_OR_CREATE_ROW_STASH */
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
 
 /*
  * advance the table info colnum to the next column, or 0 if there are no more

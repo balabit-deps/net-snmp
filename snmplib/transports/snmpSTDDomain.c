@@ -38,23 +38,27 @@ static netsnmp_tdomain stdDomain;
  */
 
 static char *
-netsnmp_std_fmtaddr(netsnmp_transport *t, void *data, int len)
+netsnmp_std_fmtaddr(netsnmp_transport *t, const void *data, int len)
 {
-    char *buf;
     DEBUGMSGTL(("domain:std","formatting addr.  data=%p\n",t->data));
     if (t->data) {
         netsnmp_std_data *data = (netsnmp_std_data*)t->data;
-        buf = (char*)malloc(SNMP_MAXBUF_MEDIUM);
-        if (!buf)
-            return strdup("STDInOut");
-        snprintf(buf, SNMP_MAXBUF_MEDIUM, "STD:%s", data->prog);
+	char *buf;
+
+        if (asprintf(&buf, "STD:%s", data->prog) < 0)
+            buf = NULL;
         DEBUGMSGTL(("domain:std","  formatted:=%s\n",buf));
         return buf;
     }
     return strdup("STDInOut");
 }
 
-
+static void
+netsnmp_std_get_taddr(netsnmp_transport *t, void **addr, size_t *addr_len)
+{
+    *addr_len = t->remote_length;
+    *addr = netsnmp_memdup(t->remote, *addr_len);
+}
 
 /*
  * You can write something into opaque that will subsequently get passed back 
@@ -90,7 +94,7 @@ netsnmp_std_recv(netsnmp_transport *t, void *buf, int size,
 
 
 static int
-netsnmp_std_send(netsnmp_transport *t, void *buf, int size,
+netsnmp_std_send(netsnmp_transport *t, const void *buf, int size,
 		 void **opaque, int *olength)
 {
     int rc = -1;
@@ -128,8 +132,8 @@ netsnmp_std_close(netsnmp_transport *t)
         /* XXX: set an alarm to kill harder the child */
     } else {
         /* close stdout/in */
-        close(1);
-        close(0);
+        close(STDOUT_FILENO);
+        close(STDIN_FILENO);
     }
     return 0;
 }
@@ -154,17 +158,16 @@ netsnmp_std_transport(const char *instring, size_t instring_len,
 {
     netsnmp_transport *t;
 
-    t = (netsnmp_transport *) malloc(sizeof(netsnmp_transport));
+    t = SNMP_MALLOC_TYPEDEF(netsnmp_transport);
     if (t == NULL) {
         return NULL;
     }
-    memset(t, 0, sizeof(netsnmp_transport));
 
     t->domain = netsnmp_snmpSTDDomain;
     t->domain_length =
         sizeof(netsnmp_snmpSTDDomain) / sizeof(netsnmp_snmpSTDDomain[0]);
 
-    t->sock = 0;
+    t->sock = -1;
     t->flags = NETSNMP_TRANSPORT_FLAG_STREAM | NETSNMP_TRANSPORT_FLAG_TUNNELED;
 
     /*
@@ -172,12 +175,13 @@ netsnmp_std_transport(const char *instring, size_t instring_len,
      * is equal to the maximum legal size of an SNMP message).  
      */
 
-    t->msgMaxSize = 0x7fffffff;
+    t->msgMaxSize = SNMP_MAX_PACKET_LEN;
     t->f_recv     = netsnmp_std_recv;
     t->f_send     = netsnmp_std_send;
     t->f_close    = netsnmp_std_close;
     t->f_accept   = netsnmp_std_accept;
     t->f_fmtaddr  = netsnmp_std_fmtaddr;
+    t->f_get_taddr = netsnmp_std_get_taddr;
 
     /*
      * if instring is not null length, it specifies a path to a prog
@@ -227,16 +231,9 @@ netsnmp_std_transport(const char *instring, size_t instring_len,
         } else {
             /* we're in the child */
 
-            /* close stdin */
-            close(0);
-            /* copy pipe output to stdout */
-            dup(infd[0]);
+            dup2(infd[0], STDIN_FILENO);
+            dup2(outfd[1], STDOUT_FILENO);
 
-            /* close stdout */
-            close(1);
-            /* copy pipe output to stdin */
-            dup(outfd[1]);
-            
             /* close all the pipes themselves */
             close(infd[0]);
             close(infd[1]);
@@ -265,9 +262,9 @@ netsnmp_std_create_tstring(const char *instring, int local,
 }
 
 netsnmp_transport *
-netsnmp_std_create_ostring(const u_char * o, size_t o_len, int local)
+netsnmp_std_create_ostring(const void *o, size_t o_len, int local)
 {
-    return netsnmp_std_transport((const char*)o, o_len, NULL);
+    return netsnmp_std_transport(o, o_len, NULL);
 }
 
 void
@@ -278,8 +275,9 @@ netsnmp_std_ctor(void)
     stdDomain.prefix = (const char **)calloc(2, sizeof(char *));
     stdDomain.prefix[0] = "std";
 
+    stdDomain.f_create_from_tstring     = NULL;
     stdDomain.f_create_from_tstring_new = netsnmp_std_create_tstring;
-    stdDomain.f_create_from_ostring = netsnmp_std_create_ostring;
+    stdDomain.f_create_from_ostring     = netsnmp_std_create_ostring;
 
     netsnmp_tdomain_register(&stdDomain);
 }

@@ -703,9 +703,6 @@
 /* UNdefine to allow specifying zero-length community string */
 /* #define NETSNMP_NO_ZEROLENGTH_COMMUNITY 1 */
 
-/* #define NETSNMP_EXIT_ON_BAD_KLREAD  */
-/* define to exit the agent on a bad kernel read */
-
 #define NETSNMP_LASTFIELD -1      /* internal define */
 
 /* Define if you have the strdup function.  */
@@ -713,20 +710,6 @@
 
 /* Define if you have the strerror function.  */
 #define HAVE_STRERROR 1
-
-/* define random functions */
-
-#ifndef HAVE_RANDOM
-#ifdef HAVE_LRAND48
-#define random lrand48
-#define srandom(s) srand48(s)
-#else
-#ifdef HAVE_RAND
-#define random rand
-#define srandom(s) srand(s)
-#endif
-#endif
-#endif
 
 /* define signal if DNE */
 

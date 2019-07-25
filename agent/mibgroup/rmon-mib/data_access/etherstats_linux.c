@@ -38,7 +38,8 @@ etherstats_interface_name_list_get (struct ifname *list_head, int *retval)
     for (p = addrs; p; p = p->ifa_next) {
 
         if (!list_head) {
-            if ( (list_head = (struct ifname *) malloc (sizeof(struct ifname))) < 0) {
+            list_head = malloc(sizeof(struct ifname));
+            if (!list_head) {
                 DEBUGMSGTL(("access:etherStatsTable:interface_name_list_get",
                             "memory allocation failed\n"));
                 snmp_log (LOG_ERR, "access:etherStatsTable,interface_name_list_get, memory allocation failed\n");
@@ -46,8 +47,8 @@ etherstats_interface_name_list_get (struct ifname *list_head, int *retval)
                 *retval = -2;
                 return NULL;
             }
-            memset (list_head, 0, sizeof (struct ifname));
-            strncpy (list_head->name, p->ifa_name, IF_NAMESIZE);
+            memset(list_head, 0, sizeof(struct ifname));
+            strlcpy(list_head->name, p->ifa_name, IF_NAMESIZE);
             continue;
         }
          for (nameptr1 = list_head; nameptr1; nameptr2 = nameptr1, nameptr1 = nameptr1->ifn_next)
@@ -57,7 +58,8 @@ etherstats_interface_name_list_get (struct ifname *list_head, int *retval)
         if (nameptr1)
             continue;
 
-        if ( (nameptr2->ifn_next = (struct ifname *) malloc (sizeof(struct ifname))) < 0) {
+        nameptr2->ifn_next = malloc(sizeof(struct ifname));
+        if (!nameptr2->ifn_next) {
             DEBUGMSGTL(("access:etherStatsTable:interface_name_list_get",
                         "memory allocation failed\n"));
             snmp_log (LOG_ERR, "access:etherStatsTable,interface_name_list_get, memory allocation failed\n");
@@ -67,10 +69,9 @@ etherstats_interface_name_list_get (struct ifname *list_head, int *retval)
             return NULL;
         }
         nameptr2 = nameptr2->ifn_next;
-        memset (nameptr2, 0, sizeof (struct ifname));
-        strncpy (nameptr2->name, p->ifa_name, IF_NAMESIZE);
+        memset(nameptr2, 0, sizeof(struct ifname));
+        strlcpy(nameptr2->name, p->ifa_name, IF_NAMESIZE);
         continue;
-
     }
 
     freeifaddrs(addrs);
@@ -155,14 +156,14 @@ interface_ioctl_etherstats_get (etherStatsTable_rowreq_ctx *rowreq_ctx , int fd,
     struct ethtool_gstrings *eth_strings;
     struct ethtool_stats *eth_stats;
     struct ifreq ifr;
-    unsigned int nstats, size_str, size_stats, i;
+    unsigned int nstats, size_str, i;
     int err;
 
     DEBUGMSGTL(("access:etherStatsTable:interface_ioctl_etherstats_get",
                 "called\n"));
 
     memset(&ifr, 0, sizeof(ifr));
-    strcpy(ifr.ifr_name, name);
+    strlcpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
 
     memset(&driver_info, 0, sizeof(driver_info));
     driver_info.cmd = ETHTOOL_GDRVINFO;
@@ -183,7 +184,6 @@ interface_ioctl_etherstats_get (etherStatsTable_rowreq_ctx *rowreq_ctx , int fd,
     }
 
     size_str = nstats * ETH_GSTRING_LEN;
-    size_stats = nstats * sizeof(u64);
 
     eth_strings = malloc(size_str + sizeof (struct ethtool_gstrings));
     if (!eth_strings) {
@@ -239,12 +239,72 @@ interface_ioctl_etherstats_get (etherStatsTable_rowreq_ctx *rowreq_ctx , int fd,
     for (i = 0; i < nstats; i++) {
         char s[ETH_GSTRING_LEN];
 
-        strncpy(s, (const char *) &eth_strings->data[i * ETH_GSTRING_LEN],
-            ETH_GSTRING_LEN);
+        strlcpy(s, (const char *) &eth_strings->data[i * ETH_GSTRING_LEN],
+                sizeof(s));
         
+        if (ETHERSTATSOCTETS(s)) {
+            data->etherStatsOctets += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSOCTETS_FLAG;
+        }
+        if (ETHERSTATSPKTS(s)) {
+            data->etherStatsPkts += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSPKTS_FLAG;
+        }
+        if (ETHERSTATSBROADCASTPKTS(s)) {
+            data->etherStatsBroadcastPkts += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSBROADCASTPKTS_FLAG;
+        }
+        if (ETHERSTATSMULTICASTPKTS(s)) {
+            data->etherStatsMulticastPkts = (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSMULTICASTPKTS_FLAG;
+        }
+        if (ETHERSTATSCRCALIGNERRORS(s)) {
+            data->etherStatsCRCAlignErrors += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSCRCALIGNERRORS_FLAG;
+        }
+        if (ETHERSTATSUNDERSIZEPKTS(s)) {
+            data->etherStatsUndersizePkts += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSUNDERSIZEPKTS_FLAG;
+        }
+        if (ETHERSTATSOVERSIZEPKTS(s)) {
+            data->etherStatsOversizePkts += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSOVERSIZEPKTS_FLAG;
+        }
+        if (ETHERSTATSFRAGMENTS(s)) {
+            data->etherStatsFragments += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSFRAGMENTS_FLAG;
+        }
         if (ETHERSTATSJABBERS(s)) {
-            data->etherStatsJabbers = (u_long)eth_stats->data[i];
+            data->etherStatsJabbers += (u_long)eth_stats->data[i];
             rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSJABBERS_FLAG;
+        }
+        if (ETHERSTATSCOLLISIONS(s)) {
+            data->etherStatsCollisions += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSCOLLISIONS_FLAG;
+        }
+        if (ETHERSTATSPKTS64OCTETS(s)) {
+            data->etherStatsPkts64Octets += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSPKTS64OCTETS_FLAG;
+        }
+        if (ETHERSTATSPKTS65TO127OCTETS(s)) {
+            data->etherStatsPkts65to127Octets += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSPKTS65TO127OCTETS_FLAG;
+        }
+        if (ETHERSTATSPKTS128TO255OCTETS(s)) {
+            data->etherStatsPkts128to255Octets += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSPKTS128TO255OCTETS_FLAG;
+        }
+        if (ETHERSTATSPKTS256TO511OCTETS(s)) {
+            data->etherStatsPkts256to511Octets += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSPKTS256TO511OCTETS_FLAG;
+        }
+        if (ETHERSTATSPKTS512TO1023OCTETS(s)) {
+            data->etherStatsPkts512to1023Octets += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSPKTS512TO1023OCTETS_FLAG;
+        }
+        if (ETHERSTATSPKTS1024TO1518OCTETS(s)) {
+            data->etherStatsPkts1024to1518Octets += (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_ETHERSTATSPKTS1024TO1518OCTETS_FLAG;
         }
     }
     free(eth_strings);
@@ -301,8 +361,7 @@ _etherStats_ioctl_get(int fd, int which, struct ifreq *ifrq, const char* name)
         }
     }
 
-    strncpy(ifrq->ifr_name, name, sizeof(ifrq->ifr_name));
-    ifrq->ifr_name[ sizeof(ifrq->ifr_name)-1 ] = 0;
+    strlcpy(ifrq->ifr_name, name, sizeof(ifrq->ifr_name));
     rc = ioctl(fd, which, ifrq);
     if (rc < 0) {
         DEBUGMSGTL(("access:etherStatsTable:ioctl",

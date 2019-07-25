@@ -14,6 +14,7 @@
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
+#include "override.h"
 
 typedef struct override_data_s {
     int             type;
@@ -50,15 +51,16 @@ override_handler(netsnmp_mib_handler *handler,
                                  (u_char *) data->value, data->value_len);
         break;
 
+#ifndef NETSNMP_NO_WRITE_SUPPORT
     case MODE_SET_RESERVE1:
         if (requests->requestvb->type != data->type)
             netsnmp_set_request_error(reqinfo, requests, SNMP_ERR_WRONGTYPE);
         break;
 
     case MODE_SET_RESERVE2:
-        if (memdup((u_char **) &data->set_space,
-                   requests->requestvb->val.string,
-                   requests->requestvb->val_len) == SNMPERR_GENERR)
+        data->set_space = netsnmp_memdup(requests->requestvb->val.string,
+                                         requests->requestvb->val_len);
+        if (!data->set_space)
             netsnmp_set_request_error(reqinfo, requests,
                                       SNMP_ERR_RESOURCEUNAVAILABLE);
         break;
@@ -87,6 +89,7 @@ override_handler(netsnmp_mib_handler *handler,
     case MODE_SET_COMMIT:
         SNMP_FREE(data->set_space);
         break;
+#endif /* !NETSNMP_NO_WRITE_SUPPORT */
 
     default:
         snmp_log(LOG_ERR, "unsupported mode in override handler\n");
@@ -214,6 +217,8 @@ netsnmp_parse_override(const char *token, char *line)
     case ASN_OBJECT_ID:
         read_config_read_objid(buf, (oid **) & thedata->value,
                                &thedata->value_len);
+        /* We need the size of the value in bytes, not in oids */
+        thedata->value_len *= sizeof(oid);
         break;
 
     case ASN_NULL:

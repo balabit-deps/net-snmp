@@ -1,7 +1,7 @@
 /*
  *  Interface MIB architecture support
  *
- * $Id: route_linux.c 19685 2010-11-17 19:57:42Z nba $
+ * $Id$
  */
 #include <net-snmp/net-snmp-config.h>
 #include <net-snmp/net-snmp-includes.h>
@@ -15,6 +15,8 @@
 #include "ip-forward-mib/data_access/route_ioctl.h"
 #include "ip-forward-mib/inetCidrRouteTable/inetCidrRouteTable_constants.h"
 #include "if-mib/data_access/interface_ioctl.h"
+#include "route.h"
+#include "route_private.h"
 
 static int
 _type_from_flags(unsigned int flags)
@@ -72,7 +74,7 @@ _load_ipv4(netsnmp_container* container, u_long *index )
     while (fgets(line, sizeof(line), in)) {
         char            rtent_name[32];
         int             refcnt, rc;
-        uint32_t        dest, nexthop, mask, tmp_mask;
+        uint32_t        dest, nexthop, mask;
         unsigned        flags, use;
 
         entry = netsnmp_access_route_entry_create();
@@ -89,7 +91,7 @@ _load_ipv4(netsnmp_container* container, u_long *index )
                      * XXX: fix type of the args 
                      */
                     &flags, &refcnt, &use, &entry->rt_metric1,
-                    &tmp_mask);
+                    &mask);
         DEBUGMSGTL(("9:access:route:container", "line |%s|\n", line));
         if (8 != rc) {
             snmp_log(LOG_ERR,
@@ -103,8 +105,7 @@ _load_ipv4(netsnmp_container* container, u_long *index )
         /*
          * temporary null terminated name
          */
-        strncpy(name, rtent_name, sizeof(name));
-        name[ sizeof(name)-1 ] = 0;
+        strlcpy(name, rtent_name, sizeof(name));
 
         /*
          * don't bother to try and get the ifindex for routes with
@@ -122,10 +123,8 @@ _load_ipv4(netsnmp_container* container, u_long *index )
          */
         entry->ns_rt_index = ++(*index);
 
-        mask = htonl(tmp_mask);
-
 #ifdef USING_IP_FORWARD_MIB_IPCIDRROUTETABLE_IPCIDRROUTETABLE_MODULE
-        entry->rt_mask = mask;
+        memcpy(&entry->rt_mask, &mask, 4);
         /** entry->rt_tos = XXX; */
         /** rt info ?? */
 #endif
@@ -204,8 +203,6 @@ _load_ipv6(netsnmp_container* container, u_long *index )
     FILE           *in;
     char            line[256];
     netsnmp_route_entry *entry = NULL;
-    char            name[16];
-    static int      log_open_err = 1;
 
     DEBUGMSGTL(("access:route:container",
                 "route_container_arch_load ipv6\n"));
@@ -216,19 +213,10 @@ _load_ipv6(netsnmp_container* container, u_long *index )
      * fetch routes from the proc file-system:
      */
     if (!(in = fopen("/proc/net/ipv6_route", "r"))) {
-        if (1 == log_open_err) {
-            NETSNMP_LOGONCE((LOG_ERR, "cannot open /proc/net/ipv6_route\n"));
-            log_open_err = 0;
-        }
+        DEBUGMSGTL(("9:access:route:container", "cannot open /proc/net/ipv6_route\n"));
         return -2;
     }
-    /*
-     * if we turned off logging of open errors, turn it back on now that
-     * we have been able to open the file.
-     */
-    if (0 == log_open_err)
-        log_open_err = 1;
-    fgets(line,sizeof(line),in); /* skip header */
+    
     while (fgets(line, sizeof(line), in)) {
         char            c_name[IFNAMSIZ+1];
         char            c_dest[33], c_src[33], c_next[33];
@@ -273,7 +261,7 @@ _load_ipv6(netsnmp_container* container, u_long *index )
         entry->if_index = se_find_value_in_slist("interfaces", c_name);
         if(SE_DNE == entry->if_index) {
             snmp_log(LOG_ERR,"unknown interface in /proc/net/ipv6_route "
-                     "('%s')\n", name);
+                     "('%s')\n", c_name);
             netsnmp_access_route_entry_free(entry);
             continue;
         }

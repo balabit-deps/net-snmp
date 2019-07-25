@@ -137,21 +137,23 @@ main(int argc, char *argv[])
     netsnmp_variable_list *vars;
     int             arg;
     int             count;
-    int             running;
     int             status;
-    int             exitval = 0;
+    int             exitval = 1;
+
+    SOCK_STARTUP;
 
     /*
      * get the common command line arguments 
      */
     switch (arg = snmp_parse_args(argc, argv, &session, "C:", optProc)) {
     case NETSNMP_PARSE_ARGS_ERROR:
-        exit(1);
+        goto out;
     case NETSNMP_PARSE_ARGS_SUCCESS_EXIT:
-        exit(0);
+        exitval = 0;
+        goto out;
     case NETSNMP_PARSE_ARGS_ERROR_USAGE:
         usage();
-        exit(1);
+        goto out;
     default:
         break;
     }
@@ -159,7 +161,7 @@ main(int argc, char *argv[])
     names = argc - arg;
     if (names < non_repeaters) {
         fprintf(stderr, "snmpbulkget: need more objects than <nonrep>\n");
-        exit(1);
+        goto out;
     }
 
     namep = name = (struct nameStruct *) calloc(names, sizeof(*name));
@@ -168,13 +170,11 @@ main(int argc, char *argv[])
         if (snmp_parse_oid(argv[arg], namep->name, &namep->name_len) ==
             NULL) {
             snmp_perror(argv[arg]);
-            exit(1);
+            goto out;
         }
         arg++;
         namep++;
     }
-
-    SOCK_STARTUP;
 
     /*
      * open an SNMP session 
@@ -185,9 +185,10 @@ main(int argc, char *argv[])
          * diagnose snmp_open errors with the input netsnmp_session pointer 
          */
         snmp_sess_perror("snmpbulkget", &session);
-        SOCK_CLEANUP;
-        exit(1);
+        goto out;
     }
+
+    exitval = 0;
 
     /*
      * create PDU for GETBULK request and add object name to request 
@@ -214,7 +215,6 @@ main(int argc, char *argv[])
             /*
              * error in response, print it 
              */
-            running = 0;
             if (response->errstat == SNMP_ERR_NOSUCHNAME) {
                 printf("End of MIB.\n");
             } else {
@@ -237,11 +237,9 @@ main(int argc, char *argv[])
     } else if (status == STAT_TIMEOUT) {
         fprintf(stderr, "Timeout: No Response from %s\n",
                 session.peername);
-        running = 0;
         exitval = 1;
     } else {                    /* status == STAT_ERROR */
         snmp_sess_perror("snmpbulkget", ss);
-        running = 0;
         exitval = 1;
     }
 
@@ -249,6 +247,8 @@ main(int argc, char *argv[])
         snmp_free_pdu(response);
 
     snmp_close(ss);
+
+out:
     SOCK_CLEANUP;
     return exitval;
 }

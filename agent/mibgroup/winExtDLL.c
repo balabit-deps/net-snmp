@@ -82,6 +82,7 @@
  */
 
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #include <net-snmp/agent/mib_module_config.h>
 
 #ifdef USING_WINEXTDLL_MODULE
@@ -93,14 +94,16 @@
 #include <string.h>
 #include <time.h>
 #include <windows.h>
+#include <winerror.h>
 #include "../../win32/Snmp-winExtDLL.h"
-#include "../../win32/MgmtApi-winExtDLL.h"
 
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/library/snmp_assert.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
 #include "util_funcs.h"
 #include "winExtDLL.h"
+
+netsnmp_feature_require(oid_is_subtree)
 
 
 #define MAX_VALUE_NAME          16383
@@ -153,6 +156,9 @@ typedef         BOOL(WINAPI * PFNSNMPEXTENSIONTRAP) (AsnObjectIdentifier *
 
 typedef         VOID(WINAPI * PFNSNMPEXTENSIONCLOSE) (void);
 
+typedef BOOL (WINAPI *pfIsWow64Process)(HANDLE hProcess, BOOL *Wow64Process);
+
+
 /**
  * Extensible array, a data structure similar to the C++ STL class
  * std::vector<>.
@@ -176,6 +182,7 @@ typedef struct {
     HANDLE          dll_handle;                      /**< DLL handle. */
     PFNSNMPEXTENSIONINIT pfSnmpExtensionInit;
     PFNSNMPEXTENSIONINITEX pfSnmpExtensionInitEx;
+    PFNSNMPEXTENSIONCLOSE pfSnmpExtensionClose;
     PFNSNMPEXTENSIONQUERY pfSnmpExtensionQuery;
     PFNSNMPEXTENSIONQUERYEX pfSnmpExtensionQueryEx;
     PFNSNMPEXTENSIONTRAP pfSnmpExtensionTrap;
@@ -238,13 +245,28 @@ static int      convert_to_windows_varbind_list(SnmpVarBindList *
 static int      convert_win_snmp_err(const int win_snmp_err);
 static winextdll_view *lookup_view_by_oid(oid * const name,
                                           const size_t name_len);
+static int      snmp_oid_compare_n_w(const oid * name1, size_t len1,
+                                     const UINT * name2, UINT len2);
+static int      snmp_oid_compare_w_n(const UINT * name1, UINT len1,
+                                     const oid * name2, size_t len2);
+static int      netsnmp_oid_is_subtree_n_w(const oid * name1, size_t len1,
+                                           const UINT * name2, UINT len2);
 static void     copy_oid(oid * const to_name, size_t * const to_name_len,
                          const oid * const from_name,
                          const size_t from_name_len);
+static void     copy_oid_n_w(oid * const to_name, size_t * const to_name_len,
+                             const UINT * const from_name,
+                             const UINT from_name_len);
 static UINT    *copy_oid_to_new_windows_oid(AsnObjectIdentifier *
                                             const windows_oid,
                                             const oid * const name,
                                             const size_t name_len);
+static int      snmp_set_var_objid_w(netsnmp_variable_list * var,
+                                     const UINT * name, UINT name_length);
+static netsnmp_variable_list *
+snmp_varlist_add_variable_w(netsnmp_variable_list ** varlist,
+                            const UINT * name, UINT name_length,
+                            u_char type, const void * value, size_t len);
 static void     send_trap(const AsnObjectIdentifier * const,
                           const AsnInteger, const AsnInteger,
                           const AsnTimeticks,
@@ -268,6 +290,8 @@ static void    *xarray_reserve(xarray * a, int reserved);
 #define WINEXTDLL_VIEW(i)       ((winextdll_view*)s_winextdll_view.p)[i]
 #define TRAPEVENT(i)            ((HANDLE*)s_trapevent.p)[i]
 #define TRAPEVENT_TO_DLLINFO(i) ((winextdll**)s_trapevent_to_dllinfo.p)[i]
+static const oid mibii_system_mib[] = { 1, 3, 6, 1, 2, 1, 1 };
+static OSVERSIONINFO s_versioninfo = { sizeof(s_versioninfo) };
 static xarray   s_winextdll = { 0, sizeof(winextdll) };
 static xarray   s_winextdll_view = { 0, sizeof(winextdll_view) };
 static xarray   s_trapevent = { 0, sizeof(HANDLE) };
@@ -283,10 +307,20 @@ static context_info *context_info_head;
 void
 init_winExtDLL(void)
 {
-    BOOL            result;
+    BOOL            result, is_wow64_process = FALSE;
     int             i;
+    uint32_t        uptime_reference;
+    pfIsWow64Process IsWow64Process;
 
     DEBUGMSG(("winExtDLL", "init_winExtDLL started.\n"));
+
+    GetVersionEx(&s_versioninfo);
+
+    IsWow64Process =
+      (pfIsWow64Process)GetProcAddress(GetModuleHandle("kernel32"),
+                                       "IsWow64Process");
+    if (IsWow64Process)
+        (*IsWow64Process)(GetCurrentProcess(), &is_wow64_process);
 
     SnmpSvcInitUptime();
 
@@ -349,6 +383,8 @@ init_winExtDLL(void)
         ext_dll_info->pfSnmpExtensionInitEx = (PFNSNMPEXTENSIONINITEX)
             GetProcAddress(ext_dll_info->dll_handle,
                            "SnmpExtensionInitEx");
+        ext_dll_info->pfSnmpExtensionClose = (PFNSNMPEXTENSIONCLOSE)
+            GetProcAddress(ext_dll_info->dll_handle, "SnmpExtensionClose");
         ext_dll_info->pfSnmpExtensionQuery = (PFNSNMPEXTENSIONQUERY)
             GetProcAddress(ext_dll_info->dll_handle, "SnmpExtensionQuery");
         ext_dll_info->pfSnmpExtensionQueryEx = (PFNSNMPEXTENSIONQUERYEX)
@@ -366,29 +402,60 @@ init_winExtDLL(void)
         }
 
         /*
+         * At least on a 64-bit Windows 7 system invoking SnmpExtensionInit()
+         * in the 32-bit version of evntagnt.dll hangs. Also, all queries in
+         * lmmib2.dll fail with "generic error" on a 64-bit Windows 7 system.
+         * So skip these two DLLs.
+         */
+        if (s_versioninfo.dwMajorVersion >= 6
+            && ((is_wow64_process
+                 && basename_equals(ext_dll_info->dll_name, "evntagnt.dll"))
+                || basename_equals(ext_dll_info->dll_name, "lmmib2.dll"))) {
+            DEBUGMSG(("winExtDLL", "init_winExtDLL: skipped DLL %s.\n",
+                      ext_dll_info->dll_name));
+            continue;
+        }
+
+        /*
          * Init and get first supported view from Windows SNMP extension DLL.
          * Note: although according to the documentation of SnmpExtensionInit()
          * the first argument of this function should be ignored by extension
-         * DLLs, passing the value GetTickCount() / 10 is necessary to make
-         * inetmib1.dll work correctly. Passing zero as the first argument
-         * causes inetmib1.dll to report an incorrect value for sysUpTime.0
-         * and also causes the same DLL not to send linkUp or linkDown traps.
+         * DLLs, passing a correct value for this first argument is necessary
+         * to make inetmib1.dll work correctly. Passing zero as the first
+         * argument causes inetmib1.dll to report an incorrect value for
+         * sysUpTime.0 and also causes the same DLL not to send linkUp or
+         * linkDown traps.
          */
         ext_dll_info->subagentTrapEvent = NULL;
         view.idLength = 0;
-        view.ids = 0;
+        view.ids = NULL;
+        if (!is_wow64_process && s_versioninfo.dwMajorVersion >= 6)
+            uptime_reference = GetTickCount() - 10 * SnmpSvcGetUptime();
+        else
+            uptime_reference = GetTickCount() / 10;
         result =
-            ext_dll_info->pfSnmpExtensionInit(GetTickCount() / 10,
+            ext_dll_info->pfSnmpExtensionInit(uptime_reference,
                                               &ext_dll_info->
                                               subagentTrapEvent, &view);
 
         if (!result) {
-            snmp_log(LOG_ERR,
-                     "init_winExtDLL: initialization of DLL %s failed.\n",
-                     ext_dll_info->dll_name);
-            FreeLibrary(ext_dll_info->dll_handle);
-            ext_dll_info->dll_handle = 0;
-            continue;
+            DEBUGMSG(("winExtDLL",
+                      "init_winExtDLL: initialization of DLL %s failed.\n",
+                      ext_dll_info->dll_name));
+            /*
+             * At least on Windows 7 SnmpExtensionInit() in some extension
+             * agent DLLs returns "FALSE" although initialization
+             * succeeded. Hence ignore the SnmpExtensionInit() return value on
+             * Windows Vista and later.
+             */
+            if (s_versioninfo.dwMajorVersion < 6) {
+                snmp_log(LOG_ERR,
+                         "init_winExtDLL: initialization of DLL %s failed.\n",
+                         ext_dll_info->dll_name);
+                FreeLibrary(ext_dll_info->dll_handle);
+                ext_dll_info->dll_handle = 0;
+                continue;
+            }
         }
 
         if (ext_dll_info->subagentTrapEvent != NULL) {
@@ -399,8 +466,28 @@ init_winExtDLL(void)
 
         memset(&ext_dll_view_info, 0, sizeof(ext_dll_view_info));
         ext_dll_view_info.winextdll_info = ext_dll_info;
-        copy_oid(ext_dll_view_info.name, &ext_dll_view_info.name_length,
-                 view.ids, view.idLength);
+        if (view.idLength == 0) {
+            DEBUGMSG(("winExtDLL",
+                      "init_winExtDLL: DLL %s did not register an OID range.\n",
+                      ext_dll_info->dll_name));
+            continue;
+        }
+        /*
+         * Skip the mib-2 system section on Windows Vista and later because
+         * at least on a 64-bit Windows 7 system all queries in that section
+         * fail with status "generic error".
+         */
+        if (s_versioninfo.dwMajorVersion >= 6
+            && snmp_oid_compare_w_n(view.ids, view.idLength, mibii_system_mib,
+                                    sizeof(mibii_system_mib) /
+                                    sizeof(mibii_system_mib[0])) == 0) {
+            DEBUGMSG(("winExtDLL",
+                      "init_winExtDLL: skipping system section of DLL %s.\n",
+                      ext_dll_info->dll_name));
+            continue;
+        }
+        copy_oid_n_w(ext_dll_view_info.name, &ext_dll_view_info.name_length,
+                     view.ids, view.idLength);
         xarray_push_back(&s_winextdll_view, &ext_dll_view_info);
 
         /*
@@ -410,9 +497,9 @@ init_winExtDLL(void)
                && ext_dll_info->pfSnmpExtensionInitEx(&view)) {
             memset(&ext_dll_view_info, 0, sizeof(ext_dll_view_info));
             ext_dll_view_info.winextdll_info = ext_dll_info;
-            copy_oid(ext_dll_view_info.name,
-                     &ext_dll_view_info.name_length, view.ids,
-                     view.idLength);
+            copy_oid_n_w(ext_dll_view_info.name,
+                         &ext_dll_view_info.name_length, view.ids,
+                         view.idLength);
             xarray_push_back(&s_winextdll_view, &ext_dll_view_info);
         }
     }
@@ -467,16 +554,22 @@ shutdown_winExtDLL(void)
 
     for (i = s_winextdll.size - 1; i >= 0; i--) {
         winextdll      *const ext_dll_info = &WINEXTDLL(i);
-        /*
-         * Freeing the Broadcom SNMP extension libraries triggers a deadlock,
-         * so skip bcmif.dll and baspmgnt.dll. 
-         */
-        if (ext_dll_info->dll_handle != 0
-            && !basename_equals(ext_dll_info->dll_name, "bcmif.dll")
-            && !basename_equals(ext_dll_info->dll_name, "baspmgnt.dll")) {
-            DEBUGMSG(("winExtDLL", "unloading %s.\n",
-                      ext_dll_info->dll_name));
-            FreeLibrary(ext_dll_info->dll_handle);
+        if (ext_dll_info->dll_handle) {
+            if (ext_dll_info->pfSnmpExtensionClose) {
+                DEBUGMSG(("winExtDLL", "closing %s.\n",
+                          ext_dll_info->dll_name));
+                ext_dll_info->pfSnmpExtensionClose();
+            }
+            /*
+             * Freeing the Broadcom SNMP extension libraries triggers
+             * a deadlock, so skip bcmif.dll and baspmgnt.dll.
+             */
+            if (!basename_equals(ext_dll_info->dll_name, "bcmif.dll")
+                && !basename_equals(ext_dll_info->dll_name, "baspmgnt.dll")) {
+                DEBUGMSG(("winExtDLL", "unloading %s.\n",
+                          ext_dll_info->dll_name));
+                FreeLibrary(ext_dll_info->dll_handle);
+            }
         }
         free(ext_dll_info->dll_name);
     }
@@ -506,7 +599,7 @@ basename_equals(const char *path, const char *basename)
 
     return path_len >= basename_len + 1
         && path[path_len - basename_len - 1] == '\\'
-        && stricmp(path + path_len - basename_len, basename) == 0;
+        && strcasecmp(path + path_len - basename_len, basename) == 0;
 }
 
 /**
@@ -664,6 +757,79 @@ get_context_info(const int index)
     return NULL;
 }
 
+/*
+ * Translate Net-SNMP request mode into an SnmpExtensionQuery() PDU type
+ * or into an SnmpExtensionQueryEx() request type.
+ */
+static int
+get_request_type(int mode, int request_type, UINT *nRequestType)
+{
+    switch (request_type) {
+    case 0:
+        /* SnmpExtensionQuery() PDU type */
+        switch (mode) {
+        case MODE_GET:
+            *nRequestType = SNMP_PDU_GET;
+            return 1;
+        case MODE_GETNEXT:
+            *nRequestType = SNMP_PDU_GETNEXT;
+            return 1;
+        case MODE_SET_RESERVE1:
+            return 0;
+        case MODE_SET_RESERVE2:
+            return 0;
+        case MODE_SET_ACTION:
+            return 0;
+        case MODE_SET_UNDO:
+            return 0;
+        case MODE_SET_COMMIT:
+            *nRequestType = SNMP_PDU_SET;
+            return 1;
+        case MODE_SET_FREE:
+            return 0;
+        default:
+            DEBUGMSG(("winExtDLL", "internal error: invalid mode %d.\n", mode));
+            netsnmp_assert(0);
+            return 0;
+        }
+    case 1:
+        /* SnmpExtensionQueryEx() request type */
+        switch (mode) {
+        case MODE_GET:
+            *nRequestType = SNMP_EXTENSION_GET;
+            return 1;
+        case MODE_GETNEXT:
+            *nRequestType = SNMP_EXTENSION_GET_NEXT;
+            return 1;
+        case MODE_SET_RESERVE1:
+            *nRequestType = SNMP_EXTENSION_SET_TEST;
+            return 1;
+        case MODE_SET_RESERVE2:
+            return 0;
+        case MODE_SET_ACTION:
+            return 0;
+        case MODE_SET_UNDO:
+            *nRequestType = SNMP_EXTENSION_SET_UNDO;
+            return 1;
+        case MODE_SET_COMMIT:
+            *nRequestType = SNMP_EXTENSION_SET_COMMIT;
+            return 1;
+        case MODE_SET_FREE:
+            *nRequestType = SNMP_EXTENSION_SET_CLEANUP;
+            return 1;
+        default:
+            DEBUGMSG(("winExtDLL", "internal error: invalid mode %d.\n", mode));
+            netsnmp_assert(0);
+            return 0;
+        }
+    default:
+        DEBUGMSG(("winExtDLL", "internal error: invalid argument %d.\n",
+                  request_type));
+        netsnmp_assert(0);
+        return 0;
+    }
+}
+
 static int
 var_winExtDLL(netsnmp_mib_handler *handler,
               netsnmp_handler_registration *reginfo,
@@ -674,7 +840,6 @@ var_winExtDLL(netsnmp_mib_handler *handler,
     winextdll      *ext_dll_info;
     netsnmp_request_info *request;
     UINT            nRequestType;
-    const char     *mode_name;
     int             rc;
 
     netsnmp_assert(ext_dll_view_info);
@@ -691,43 +856,8 @@ var_winExtDLL(netsnmp_mib_handler *handler,
         return SNMP_ERR_GENERR;
     }
 
-    switch (reqinfo->mode) {
-    case MODE_GET:
-        mode_name = "GET";
-        nRequestType = SNMP_EXTENSION_GET;
-        netsnmp_assert(!context_info_head);
-        break;
-    case MODE_GETNEXT:
-        mode_name = "GETNEXT";
-        nRequestType = SNMP_EXTENSION_GET_NEXT;
-        netsnmp_assert(!context_info_head);
-        break;
-    case MODE_SET_RESERVE1:
-        mode_name = "SET_RESERVE1";
-        nRequestType = SNMP_EXTENSION_SET_TEST;
-        break;
-    case MODE_SET_RESERVE2:
-        mode_name = "SET_RESERVE2";
-        return SNMP_ERR_NOERROR;
-    case MODE_SET_ACTION:
-        mode_name = "SET_ACTION";
-        return SNMP_ERR_NOERROR;
-    case MODE_SET_UNDO:
-        mode_name = "SET_UNDO";
-        nRequestType = SNMP_EXTENSION_SET_UNDO;
-        break;
-    case MODE_SET_COMMIT:
-        mode_name = "SET_COMMIT";
-        nRequestType = SNMP_EXTENSION_SET_COMMIT;
-        break;
-    case MODE_SET_FREE:
-        mode_name = "SET_FREE";
-        nRequestType = SNMP_EXTENSION_SET_CLEANUP;
-        break;
-    default:
-        DEBUGMSG(("winExtDLL",
-                  "internal error: invalid mode %d.\n", reqinfo->mode));
-        netsnmp_assert(0);
+    if (!get_request_type(reqinfo->mode, !!ext_dll_info->pfSnmpExtensionQueryEx,
+                          &nRequestType)) {
         return SNMP_ERR_NOERROR;
     }
 
@@ -771,13 +901,41 @@ var_winExtDLL(netsnmp_mib_handler *handler,
          * before the root OID of this handler, replace it by the root OID.
          */
         if (reqinfo->mode == MODE_GETNEXT
-            && snmp_oid_compare(win_varbinds.list[0].name.ids,
-                                win_varbinds.list[0].name.idLength,
-                                reginfo->rootoid,
-                                reginfo->rootoid_len) < 0) {
-            AsnObjectIdentifier Root =
-                { reginfo->rootoid_len, reginfo->rootoid };
-            SnmpUtilOidCpy(&win_varbinds.list[0].name, &Root);
+            && snmp_oid_compare_w_n(win_varbinds.list[0].name.ids,
+                                    win_varbinds.list[0].name.idLength,
+                                    reginfo->rootoid,
+                                    reginfo->rootoid_len) < 0) {
+            DEBUGIF("winExtDLL") {
+                size_t          oid1_namelen = 0, oid2_namelen = 0, outlen1 = 0,
+                                outlen2 = 0;
+                char           *oid1_name = NULL, *oid2_name = NULL;
+                int             overflow1 = 0, overflow2 = 0;
+
+                netsnmp_static_assert(sizeof(oid) == sizeof(UINT));
+                netsnmp_sprint_realloc_objid((u_char **) & oid1_name,
+                                             &oid1_namelen, &outlen1, 1,
+                                             &overflow1, (const oid *)
+                                             win_varbinds.list[0].name.ids,
+                                             win_varbinds.list[0].name.idLength);
+                netsnmp_sprint_realloc_objid((u_char **) & oid2_name,
+                                             &oid2_namelen, &outlen2, 1,
+                                             &overflow2, reginfo->rootoid,
+                                             reginfo->rootoid_len);
+                DEBUGMSG(("winExtDLL",
+                          "extension DLL %s: replacing OID %s%s by OID %s%s.\n",
+                          ext_dll_info->dll_name,
+                          oid1_name, overflow1 ? " [TRUNCATED]" : "",
+                          oid2_name, overflow2 ? " [TRUNCATED]" : ""));
+                free(oid2_name);
+                free(oid1_name);
+            }
+
+            SnmpUtilOidFree(&win_varbinds.list[0].name);
+            memset(&win_varbinds.list[0].name, 0,
+                   sizeof(win_varbinds.list[0].name));
+            copy_oid_to_new_windows_oid(&win_varbinds.list[0].name,
+                                        reginfo->rootoid,
+                                        reginfo->rootoid_len);
         }
 
         if (ext_dll_info->pfSnmpExtensionQueryEx) {
@@ -810,9 +968,26 @@ var_winExtDLL(netsnmp_mib_handler *handler,
 
         rc = convert_win_snmp_err(ErrorStatus);
         if (rc != SNMP_ERR_NOERROR) {
-            DEBUGMSG(("winExtDLL",
-                      "extension DLL %s: SNMP query function returned error code %lu (Windows) / %d (Net-SNMP).\n",
-                      ext_dll_info->dll_name, ErrorStatus, rc));
+            DEBUGIF("winExtDLL") {
+                size_t          oid_namelen = 0, outlen = 0;
+                char           *oid_name = NULL;
+                int             overflow = 0;
+
+                netsnmp_sprint_realloc_objid((u_char **) & oid_name,
+                                             &oid_namelen,
+                                             &outlen, 1, &overflow,
+                                             ext_dll_view_info->name,
+                                             ext_dll_view_info->name_length);
+                DEBUGMSG(("winExtDLL", "extension DLL %s: SNMP query function"
+                          " returned error code %lu (Windows) / %d (Net-SNMP)"
+                          " for request type %d, OID %s%s, ASN type %d and"
+                          " value %ld.\n",
+                          ext_dll_info->dll_name, ErrorStatus, rc, nRequestType,
+                          oid_name, overflow ? " [TRUNCATED]" : "",
+                          win_varbinds.list[0].value.asnType,
+                          win_varbinds.list[0].value.asnValue.number));
+                free(oid_name);
+            }
             netsnmp_assert(ErrorIndex == 1);
             netsnmp_request_set_error(requests, rc);
             if (rc == SNMP_NOSUCHOBJECT || rc == SNMP_NOSUCHINSTANCE
@@ -844,20 +1019,20 @@ var_winExtDLL(netsnmp_mib_handler *handler,
              * win_varbind by an SNMP extension DLL that has not been
              * instrumented by BoundsChecker.
              */
-            if (netsnmp_oid_is_subtree(ext_dll_view_info->name,
-                                       ext_dll_view_info->name_length,
-                                       win_varbind->name.ids,
-                                       win_varbind->name.idLength) == 0
-                && snmp_oid_compare(varbind->name, varbind->name_length,
-                                    win_varbind->name.ids,
-                                    win_varbind->name.idLength) < 0) {
+            if (netsnmp_oid_is_subtree_n_w(ext_dll_view_info->name,
+                                           ext_dll_view_info->name_length,
+                                           win_varbind->name.ids,
+                                           win_varbind->name.idLength) == 0
+                && snmp_oid_compare_n_w(varbind->name, varbind->name_length,
+                                        win_varbind->name.ids,
+                                        win_varbind->name.idLength) < 0) {
                 /*
                  * Copy the OID returned by the extension DLL to the
                  * Net-SNMP varbind.
                  */
-                snmp_set_var_objid(varbind,
-                                   win_varbind->name.ids,
-                                   win_varbind->name.idLength);
+                snmp_set_var_objid_w(varbind,
+                                     win_varbind->name.ids,
+                                     win_varbind->name.idLength);
                 copy_value = TRUE;
             }
         }
@@ -1136,8 +1311,8 @@ send_trap(const AsnObjectIdentifier * const pEnterprise,
          * Enterprise specific trap: compute the OID
          * *pEnterprise + ".0." + SpecificTrap.
          */
-        copy_oid(vb2_oid, &vb2_oid_len,
-                 pEnterprise->ids, pEnterprise->idLength);
+        copy_oid_n_w(vb2_oid, &vb2_oid_len,
+                     pEnterprise->ids, pEnterprise->idLength);
         vb2_oid[vb2_oid_len++] = 0;
         vb2_oid[vb2_oid_len++] = SpecificTrap;
     } else {
@@ -1208,43 +1383,42 @@ append_windows_varbind(netsnmp_variable_list ** const net_snmp_varbinds,
 {
     switch (win_varbind->value.asnType) {
     case MS_ASN_INTEGER:
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_INTEGER,
-                                  (const u_char *) &win_varbind->value.
-                                  asnValue.number,
-                                  sizeof(win_varbind->value.asnValue.
-                                         number));
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_INTEGER,
+                                    &win_varbind->value.asnValue.number,
+                                    sizeof(win_varbind->value.asnValue.
+                                           number));
         break;
     case MS_ASN_BITS:
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_BIT_STR,
-                                  win_varbind->value.asnValue.bits.stream,
-                                  win_varbind->value.asnValue.bits.length);
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_BIT_STR,
+                                    win_varbind->value.asnValue.bits.stream,
+                                    win_varbind->value.asnValue.bits.length);
         break;
     case MS_ASN_OCTETSTRING:
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_OCTET_STR,
-                                  win_varbind->value.asnValue.string.
-                                  stream,
-                                  win_varbind->value.asnValue.string.
-                                  length);
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_OCTET_STR,
+                                    win_varbind->value.asnValue.string.
+                                    stream,
+                                    win_varbind->value.asnValue.string.
+                                    length);
         break;
     case MS_ASN_NULL:
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_NULL, 0, 0);
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_NULL, 0, 0);
         break;
     case MS_ASN_OBJECTIDENTIFIER:
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_OBJECT_ID,
-                                  (u_char *) win_varbind->value.asnValue.
-                                  object.ids,
-                                  win_varbind->value.asnValue.object.
-                                  idLength * sizeof(oid));
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_OBJECT_ID,
+                                    win_varbind->value.asnValue.
+                                    object.ids,
+                                    win_varbind->value.asnValue.object.
+                                    idLength * sizeof(oid));
         break;
 
         /*
@@ -1252,82 +1426,95 @@ append_windows_varbind(netsnmp_variable_list ** const net_snmp_varbinds,
          */
 
     case MS_ASN_SEQUENCE:
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_SEQUENCE,
-                                  win_varbind->value.asnValue.sequence.
-                                  stream,
-                                  win_varbind->value.asnValue.sequence.
-                                  length);
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_SEQUENCE,
+                                    win_varbind->value.asnValue.sequence.
+                                    stream,
+                                    win_varbind->value.asnValue.sequence.
+                                    length);
         break;
     case MS_ASN_IPADDRESS:
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_IPADDRESS,
-                                  win_varbind->value.asnValue.address.
-                                  stream,
-                                  win_varbind->value.asnValue.address.
-                                  length);
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_IPADDRESS,
+                                    win_varbind->value.asnValue.address.
+                                    stream,
+                                    win_varbind->value.asnValue.address.
+                                    length);
         break;
     case MS_ASN_COUNTER32:
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_COUNTER,
-                                  (const u_char *) &win_varbind->value.
-                                  asnValue.counter,
-                                  sizeof(win_varbind->value.asnValue.
-                                         counter));
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_COUNTER,
+                                    &win_varbind->value.asnValue.counter,
+                                    sizeof(win_varbind->value.asnValue.
+                                           counter));
         break;
     case MS_ASN_GAUGE32:
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_GAUGE,
-                                  (const u_char *) &win_varbind->value.
-                                  asnValue.gauge,
-                                  sizeof(win_varbind->value.asnValue.
-                                         gauge));
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_GAUGE,
+                                    &win_varbind->value.asnValue.gauge,
+                                    sizeof(win_varbind->value.asnValue.
+                                           gauge));
         break;
     case MS_ASN_TIMETICKS:
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_TIMETICKS,
-                                  (const u_char *) &win_varbind->value.
-                                  asnValue.ticks,
-                                  sizeof(win_varbind->value.asnValue.
-                                         ticks));
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_TIMETICKS,
+                                    &win_varbind->value.asnValue.ticks,
+                                    sizeof(win_varbind->value.asnValue.
+                                           ticks));
         break;
     case MS_ASN_OPAQUE:        // AsnOctetString
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_OPAQUE,
-                                  win_varbind->value.asnValue.arbitrary.
-                                  stream,
-                                  win_varbind->value.asnValue.arbitrary.
-                                  length);
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_OPAQUE,
+                                    win_varbind->value.asnValue.arbitrary.
+                                    stream,
+                                    win_varbind->value.asnValue.arbitrary.
+                                    length);
         break;
     case MS_ASN_COUNTER64:
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_COUNTER64,
-                                  (const u_char *) &win_varbind->value.
-                                  asnValue.counter64,
-                                  sizeof(win_varbind->value.asnValue.
-                                         counter64));
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_COUNTER64,
+                                    &win_varbind->value.asnValue.counter64,
+                                    sizeof(win_varbind->value.asnValue.
+                                           counter64));
         break;
     case MS_ASN_UINTEGER32:
-        snmp_varlist_add_variable(net_snmp_varbinds, win_varbind->name.ids,
-                                  win_varbind->name.idLength,
-                                  ASN_UNSIGNED,
-                                  (const u_char *) &win_varbind->value.
-                                  asnValue.unsigned32,
-                                  sizeof(win_varbind->value.asnValue.
-                                         unsigned32));
+        snmp_varlist_add_variable_w(net_snmp_varbinds, win_varbind->name.ids,
+                                    win_varbind->name.idLength,
+                                    ASN_UNSIGNED,
+                                    &win_varbind->value.asnValue.unsigned32,
+                                    sizeof(win_varbind->value.asnValue.
+                                           unsigned32));
         break;
     default:
         return SNMP_ERR_GENERR;
     }
 
     return SNMP_ERR_NOERROR;
+}
+
+static int
+snmp_set_var_objid_w(netsnmp_variable_list * var, const UINT * name,
+                     UINT name_length)
+{
+    netsnmp_static_assert(sizeof(oid) == sizeof(UINT));
+    return snmp_set_var_objid(var, (const oid *) name, name_length);
+}
+
+static netsnmp_variable_list *
+snmp_varlist_add_variable_w(netsnmp_variable_list ** varlist, const UINT * name,
+                            UINT name_length, u_char type, const void * value,
+                            size_t len)
+{
+    netsnmp_static_assert(sizeof(oid) == sizeof(UINT));
+    return snmp_varlist_add_variable(varlist, (const oid *) name, name_length, type,
+                                     value, len);
 }
 
 /**
@@ -1543,6 +1730,30 @@ lookup_view_by_oid(oid * const name, const size_t name_len)
     return NULL;
 }
 
+static int
+snmp_oid_compare_n_w(const oid * name1, size_t len1, const UINT * name2,
+                     UINT len2)
+{
+    netsnmp_static_assert(sizeof(oid) == sizeof(UINT));
+    return snmp_oid_compare(name1, len1, (const oid *) name2, len2);
+}
+
+static int
+snmp_oid_compare_w_n(const UINT * name1, UINT len1, const oid * name2,
+                     size_t len2)
+{
+    netsnmp_static_assert(sizeof(oid) == sizeof(UINT));
+    return snmp_oid_compare((const oid *) name1, len1, name2, len2);
+}
+
+static int
+netsnmp_oid_is_subtree_n_w(const oid * name1, size_t len1, const UINT * name2,
+                           UINT len2)
+{
+    netsnmp_static_assert(sizeof(oid) == sizeof(UINT));
+    return netsnmp_oid_is_subtree(name1, len1, (const oid *) name2, len2);
+}
+
 /**
  * Copy an OID.
  *
@@ -1566,6 +1777,23 @@ copy_oid(oid * const to_name, size_t * const to_name_len,
         to_name[j] = from_name[j];
 
     *to_name_len = j;
+}
+
+/**
+ * Copy an OID.
+ *
+ * @param[out] to_name       Number of elements written to destination OID.
+ * @param[out] to_name_len   Length of destination OID. Must have at least
+ *                           min(from_name_len, MAX_OID_LEN) elements.
+ * @param[in]  from_name     Original OID.
+ * @param[in]  from_name_len Length of original OID.
+ */
+static void
+copy_oid_n_w(oid * const to_name, size_t * const to_name_len,
+             const UINT * const from_name, const UINT from_name_len)
+{
+    netsnmp_static_assert(sizeof(oid) == sizeof(UINT));
+    copy_oid(to_name, to_name_len, (const oid *) from_name, from_name_len);
 }
 
 /**

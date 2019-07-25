@@ -51,8 +51,10 @@
 #ifdef HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
+#if !defined(dragonfly)
 #ifdef HAVE_SYS_VNODE_H
 #include <sys/vnode.h>
+#endif
 #endif
 #ifdef HAVE_UFS_UFS_QUOTA_H
 #include <ufs/ufs/quota.h>
@@ -78,6 +80,9 @@
 #endif
 #if HAVE_SYS_VFS_H
 #include <sys/vfs.h>
+#endif
+#if defined(__FreeBSD__) && __FreeBSD_version >= 700055 	/* Or HAVE_SYS_UCRED_H */
+#include <sys/ucred.h>
 #endif
 #if defined(HAVE_STATFS)
 #if HAVE_SYS_MOUNT_H
@@ -167,9 +172,9 @@ struct diskpart {
 #define MAX_INT_32 0x7fffffff
 #define MAX_UINT_32 0xffffffff
 
-int             numdisks;
+unsigned int    numdisks;
 int             allDisksIncluded = 0;
-int             maxdisks = 0;
+unsigned int    maxdisks = 0;
 struct diskpart *disks;
 
 struct variable2 extensible_disk_variables[] = {
@@ -238,7 +243,7 @@ init_disk(void)
 static void
 disk_free_config(void)
 {
-  int             i;
+  unsigned int             i;
 
   numdisks = 0;
   for (i = 0; i < maxdisks; i++) {    /* init/erase disk db */
@@ -404,9 +409,8 @@ add_device(char *path, char *device, int minspace, int minpercent, int override)
     /* add if and only if the device was found */
     if(device[0] != 0) {
       /* The following buffers are cleared above, no need to add '\0' */
-      strncpy(disks[numdisks].path, path, sizeof(disks[numdisks].path) - 1);
-      strncpy(disks[numdisks].device, device,
-              sizeof(disks[numdisks].device) - 1);
+      strlcpy(disks[numdisks].path, path, sizeof(disks[numdisks].path));
+      strlcpy(disks[numdisks].device, device, sizeof(disks[numdisks].device));
       disks[numdisks].minimumspace = minspace;
       disks[numdisks].minpercent   = minpercent;
       numdisks++;  
@@ -429,7 +433,7 @@ modify_disk_parameters(int index, int minspace, int minpercent)
 
 int disk_exists(char *path) 
 {
-  int index;
+  unsigned int index;
   for(index = 0; index < numdisks; index++) {
     DEBUGMSGTL(("ucd-snmp/disk", "Checking for %s. Found %s at %d\n", path, disks[index].path, index));
     if(strcmp(path, disks[index].path) == 0) {
@@ -510,6 +514,18 @@ find_and_add_allDisks(int minpercent)
     dummy = 1;
   }
   endfsent();			/* close /etc/fstab */
+#if defined(__FreeBSD__) && __FreeBSD_version >= 700055
+  {
+    struct statfs *mntbuf;
+    size_t i, mntsize;
+    mntsize = getmntinfo(&mntbuf, MNT_NOWAIT);
+    for (i = 0; i < mntsize; i++) {
+      if (strncmp(mntbuf[i].f_fstypename, "zfs", 3) == 0) {
+	add_device(mntbuf[i].f_mntonname, mntbuf[i].f_mntfromname, -1, minpercent, 0);
+      }
+    }
+  }
+#endif
   if(dummy != 0) {
     /*
      * dummy clause for else below
@@ -552,7 +568,6 @@ find_device(char *path)
   FILE           *mntfp;
 #elif HAVE_FSTAB_H
   struct fstab   *fstab;
-  struct stat     stat1;
 #elif HAVE_STATFS
   struct statfs   statf;
 #endif
@@ -578,8 +593,7 @@ find_device(char *path)
   }
   while (mntfp && NULL != (mntent = getmntent(mntfp)))
     if (strcmp(path, mntent->mnt_dir) == 0) {
-      strncpy(device, mntent->mnt_fsname, sizeof(device));
-      device[sizeof(device) - 1] = '\0';
+      strlcpy(device, mntent->mnt_fsname, sizeof(device));
       DEBUGMSGTL(("ucd-snmp/disk", "Disk:  %s\n",
 		  mntent->mnt_fsname));
       break;
@@ -603,18 +617,13 @@ find_device(char *path)
 		  path, mnttab.mnt_mountp));
     }
   fclose(mntfp);
-  if (i == 0) {
-    strncpy(device, mnttab.mnt_special, sizeof(device));
-    device[sizeof(device) - 1] = '\0';
-  }
+  if (i == 0)
+    strlcpy(device, mnttab.mnt_special, sizeof(device));
 #endif /* HAVE_SETMNTENT */
 #elif HAVE_FSTAB_H
-  stat(path, &stat1);
   setfsent();
-  if ((fstab = getfsfile(path))) {
-    strncpy(device, fstab->fs_spec, sizeof(device));
-    device[sizeof(device) - 1] = '\0';
-  }
+  if ((fstab = getfsfile(path)))
+    strlcpy(device, fstab->fs_spec, sizeof(device));
   endfsent();
   if (device[0] != '\0') {
      /*
@@ -624,8 +633,7 @@ find_device(char *path)
 
 #elif HAVE_STATFS
   if (statfs(path, &statf) == 0) {
-    strncpy(device, statf.f_mntfromname, sizeof(device) - 1);
-    device[sizeof(device) - 1] = '\0';
+    strlcpy(device, statf.f_mntfromname, sizeof(device));
     DEBUGMSGTL(("ucd-snmp/disk", "Disk:  %s\n",
 		statf.f_mntfromname));
   }
@@ -744,8 +752,7 @@ fill_dsk_entry(int disknum, struct dsk_entry *entry)
 #endif 
 #endif /* defined(HAVE_STRUCT_STATVFS_F_FILES) */
 
-#else
-#if HAVE_FSTAB_H
+#elif HAVE_FSTAB_H
     /*
      * read the disk information 
      */
@@ -779,7 +786,12 @@ fill_dsk_entry(int disknum, struct dsk_entry *entry)
     entry->dskTotal = (unsigned long long)(totalblks * multiplier);
     entry->dskAvail = (unsigned long long)(avail * multiplier);
     entry->dskUsed = (unsigned long long)(used * multiplier);
-#endif
+#else
+    /* MinGW */
+    entry->dskPercent = 0;
+    entry->dskTotal = 0;
+    entry->dskAvail = 0;
+    entry->dskUsed = 0;
 #endif
 
     entry->dskErrorFlag =
@@ -808,16 +820,19 @@ var_extensible_disk(struct variable *vp,
                     int exact,
                     size_t * var_len, WriteMethod ** write_method)
 {
-    int             ret, disknum = 0;
+    int             ret;
+    unsigned int    disknum = 0;
     struct dsk_entry entry;
     static long     long_ret;
-    static char     errmsg[300];
+    static char    *errmsg;
 
 tryAgain:
     if (header_simple_table
         (vp, name, length, exact, var_len, write_method, numdisks))
         return (NULL);
     disknum = name[*length - 1] - 1;
+	if (disknum > maxdisks)
+		return NULL;
     switch (vp->magic) {
     case MIBINDEX:
         long_ret = disknum + 1;
@@ -896,22 +911,22 @@ tryAgain:
         return ((u_char *) (&long_ret));
 
     case ERRORMSG:
+        free(errmsg);
+        errmsg = NULL;
+        *var_len = 0;
         if (entry.dskErrorFlag) {
-            if (disks[disknum].minimumspace >= 0)
-                snprintf(errmsg, sizeof(errmsg),
-                        "%s: less than %d free (= %d)",
-                        disks[disknum].path, disks[disknum].minimumspace,
-                        (int) entry.dskAvail);
-            else
-                snprintf(errmsg, sizeof(errmsg),
-                        "%s: less than %d%% free (= %d%%)",
-                        disks[disknum].path, disks[disknum].minpercent,
-                        (int)entry.dskPercent);
-            errmsg[ sizeof(errmsg)-1 ] = 0;
-        } else
-            errmsg[0] = 0;
-        *var_len = strlen(errmsg);
-        return ((u_char *) (errmsg));
+            if ((disks[disknum].minimumspace >= 0 &&
+                 asprintf(&errmsg, "%s: less than %d free (= %d)",
+                          disks[disknum].path, disks[disknum].minimumspace,
+                          (int) entry.dskAvail) >= 0) ||
+                (disks[disknum].minimumspace < 0 &&
+                 asprintf(&errmsg, "%s: less than %d%% free (= %d%%)",
+                          disks[disknum].path, disks[disknum].minpercent,
+                          (int)entry.dskPercent) >= 0)) {
+                *var_len = strlen(errmsg);
+            }
+        }
+        return (u_char *) (errmsg);
     }
     return NULL;
 }

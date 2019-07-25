@@ -1,8 +1,8 @@
 # ======================================================================
 # $Source$
-# $Revision: 19781 $
-# $Date: 2011-01-03 14:24:19 -0800 (Mon, 03 Jan 2011) $
-# $Author: hardaker $
+# $Revision$
+# $Date$
+# $Author$
 # $Name$
 # $State$
 # ======================================================================
@@ -19,7 +19,7 @@ SHELL = /bin/sh
 NAME = net-snmp
 
 # Define the default RPM release number. Set by Version-Munge.pl
-VERSION = 5.6.1
+VERSION = 5.8
 
 VERSION_TAG=`echo Ext-$(VERSION) | sed 's/\./-/g;'`
 

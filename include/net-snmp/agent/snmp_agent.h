@@ -7,6 +7,11 @@
  * Copyright © 2003 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms specified in the COPYING file
  * distributed with the Net-SNMP package.
+ *
+ * Portions of this file are copyrighted by:
+ * Copyright (c) 2016 VMware, Inc. All rights reserved.
+ * Use is subject to license terms specified in the COPYING file
+ * distributed with the Net-SNMP package.
  */
 /*
  * @file snmp_agent.h
@@ -31,6 +36,9 @@ extern          "C" {
 
 #define SNMP_MAX_PDU_SIZE 64000 /* local constraint on PDU size sent by agent
                                  * (see also SNMP_MAX_MSG_SIZE in snmp_api.h) */
+
+#define SNMP_AGENT_FLAGS_NONE                   0x0
+#define SNMP_AGENT_FLAGS_CANCEL_IN_PROGRESS     0x1
 
     /*
      * If non-zero, causes the addresses of peers to be logged when receptions
@@ -118,9 +126,15 @@ extern          "C" {
 #define MODE_GETNEXT          SNMP_MSG_GETNEXT
 #define MODE_GETBULK          SNMP_MSG_GETBULK
 #define MODE_GET_STASH        SNMP_MSG_INTERNAL_GET_STASH
+#ifndef NETSNMP_NO_WRITE_SUPPORT
 #define MODE_IS_GET(x)        ((x >= 128) && (x != -1)  && (x != SNMP_MSG_SET))
+#else /* NETSNMP_NO_WRITE_SUPPORT */
+#define MODE_IS_GET(x)        ((x >= 128) && (x != -1))
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
+
     /* #define MODE_IS_GET(x)        ((x == SNMP_MSG_GET) || (x == SNMP_MSG_GETNEXT) || (x == SNMP_MSG_GETBULK) || (x == SNMP_MSG_INTERNAL_GET_STASH)) */
 
+#ifndef NETSNMP_NO_WRITE_SUPPORT
 #define MODE_SET_BEGIN        SNMP_MSG_INTERNAL_SET_BEGIN
 #define MODE_SET_RESERVE1     SNMP_MSG_INTERNAL_SET_RESERVE1
 #define MODE_SET_RESERVE2     SNMP_MSG_INTERNAL_SET_RESERVE2
@@ -130,11 +144,13 @@ extern          "C" {
 #define MODE_SET_UNDO         SNMP_MSG_INTERNAL_SET_UNDO
 #define MODE_IS_SET(x)         ((x < 128) || (x == -1) || (x == SNMP_MSG_SET))
     /* #define MODE_IS_SET(x)         (!MODE_IS_GET(x)) */
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
 
 #define MODE_BSTEP_PRE_REQUEST   SNMP_MSG_INTERNAL_PRE_REQUEST
 #define MODE_BSTEP_POST_REQUEST  SNMP_MSG_INTERNAL_POST_REQUEST
 
 #define MODE_BSTEP_OBJECT_LOOKUP       SNMP_MSG_INTERNAL_OBJECT_LOOKUP
+#ifndef NETSNMP_NO_WRITE_SUPPORT
 #define MODE_BSTEP_CHECK_VALUE         SNMP_MSG_INTERNAL_CHECK_VALUE
 #define MODE_BSTEP_ROW_CREATE          SNMP_MSG_INTERNAL_ROW_CREATE
 #define MODE_BSTEP_UNDO_SETUP          SNMP_MSG_INTERNAL_UNDO_SETUP
@@ -145,7 +161,7 @@ extern          "C" {
 #define MODE_BSTEP_UNDO_COMMIT         SNMP_MSG_INTERNAL_UNDO_COMMIT
 #define MODE_BSTEP_IRREVERSIBLE_COMMIT SNMP_MSG_INTERNAL_IRREVERSIBLE_COMMIT
 #define MODE_BSTEP_UNDO_CLEANUP        SNMP_MSG_INTERNAL_UNDO_CLEANUP
-
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
 
 /** @typedef struct netsnmp_agent_request_info_s netsnmp_agent_request_info
  * Typedefs the netsnmp_agent_request_info_s struct into
@@ -197,6 +213,7 @@ extern          "C" {
         int             treecache_num;  /* number of current cache entries */
         netsnmp_cachemap *cache_store;
         int             vbcount;
+        int             flags;
     } netsnmp_agent_session;
 
     /*
@@ -232,6 +249,7 @@ extern          "C" {
     int             init_master_agent(void);
     void            shutdown_master_agent(void);
     int             agent_check_and_process(int block);
+    void            netsnmp_check_delegated_requests(void);
     void            netsnmp_check_outstanding_agent_requests(void);
 
     int             netsnmp_request_set_error(netsnmp_request_info *request,
@@ -263,6 +281,7 @@ extern          "C" {
     u_long          netsnmp_marker_uptime(marker_t pm);
     u_long          netsnmp_timeval_uptime(struct timeval *tv);
     const_marker_t  netsnmp_get_agent_starttime(void);
+    uint64_t        netsnmp_get_agent_runtime(void);
     void            netsnmp_set_agent_starttime(marker_t s);
     u_long          netsnmp_get_agent_uptime(void);
     void            netsnmp_set_agent_uptime(u_long hsec);
@@ -286,6 +305,8 @@ extern          "C" {
                                                 *t);
     void            netsnmp_deregister_agent_nsap(int handle);
 
+    int             netsnmp_agent_listen_on(const char *port);
+
     void
         netsnmp_agent_add_list_data(netsnmp_agent_request_info *agent,
                                     netsnmp_data_list *node);
@@ -305,6 +326,22 @@ extern          "C" {
            netsnmp_free_agent_data_sets(netsnmp_agent_request_info *agent);
     void
         netsnmp_free_agent_request_info(netsnmp_agent_request_info *ari);
+
+
+#ifndef NETSNMP_NO_PDU_STATS
+    /*
+     * pdu stats
+     */
+    typedef struct netsnmp_pdu_stats_s {
+        u_long          processing_time; /* ms */
+        time_t          timestamp; /* date/time */
+        netsnmp_pdu    *pdu;
+    } netsnmp_pdu_stats;
+
+    netsnmp_container * netsnmp_get_pdu_stats(void);
+
+#endif /* NETSNMP_NO_PDU_STATS */
+
 
 #ifdef __cplusplus
 }

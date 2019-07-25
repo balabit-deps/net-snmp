@@ -211,8 +211,13 @@ dot3StatsTable_container_shutdown(netsnmp_container * container_ptr)
 int
 dot3StatsTable_container_load(netsnmp_container * container)
 {
-    dot3StatsTable_rowreq_ctx *rowreq_ctx;
     size_t          count = 0;
+    int             fd;
+#if defined(linux)
+    long            dot3StatsIndex;
+    int             rc = 0, retval = 0;
+    struct ifname *list_head = NULL, *p = NULL;
+#endif
     
     DEBUGMSGTL(("verbose:dot3StatsTable:dot3StatsTable_container_load",
                 "called\n"));
@@ -231,13 +236,7 @@ dot3StatsTable_container_load(netsnmp_container * container)
      * dot3StatsIndex(1)/InterfaceIndex/ASN_INTEGER/long(long)//l/A/w/e/R/d/H
      */
 
-    long            dot3StatsIndex;
-    int             fd;
-    int             rc = 0, retval = 0;
 
-#if defined(linux)
-    struct ifname *list_head = NULL, *p = NULL;
-#endif
 
     /*
      * create socket for ioctls
@@ -269,9 +268,7 @@ dot3StatsTable_container_load(netsnmp_container * container)
      */
 
     for (p = list_head; p; p = p->ifn_next) {
-        u_int           flags;
-
-        flags = 0;
+        dot3StatsTable_rowreq_ctx *rowreq_ctx;
 
         DEBUGMSGTL(("access:dot3StatsTable", "processing '%s'\n", p->name));
 
@@ -289,6 +286,7 @@ dot3StatsTable_container_load(netsnmp_container * container)
         rowreq_ctx = dot3StatsTable_allocate_rowreq_ctx(NULL);
         if (NULL == rowreq_ctx) {
             snmp_log(LOG_ERR, "memory allocation for dot3StatsTable failed\n");
+            dot3stats_interface_name_list_free(list_head);
             close(fd);
             return MFD_RESOURCE_UNAVAILABLE;
         }
@@ -311,6 +309,11 @@ dot3StatsTable_container_load(netsnmp_container * container)
          */
 
         memset (&rowreq_ctx->data, 0, sizeof (rowreq_ctx->data));
+
+	interface_sysclassnet_dot3stats_get(rowreq_ctx, p->name);
+
+	interface_dot3stats_get_errorcounters(rowreq_ctx, p->name);
+
         rc = interface_ioctl_dot3stats_get (rowreq_ctx, fd, p->name);
 
         if (rc < 0) {
@@ -327,10 +330,6 @@ dot3StatsTable_container_load(netsnmp_container * container)
             dot3StatsTable_release_rowreq_ctx(rowreq_ctx);
             continue;
         }
-
-	interface_sysclassnet_dot3stats_get(rowreq_ctx, p->name);
-
-	interface_dot3stats_get_errorcounters(rowreq_ctx, p->name);
 
         /*
          * insert into table container

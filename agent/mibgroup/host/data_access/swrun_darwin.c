@@ -14,6 +14,7 @@
 #include <net-snmp/library/container.h>
 #include <net-snmp/library/snmp_debug.h>
 #include <net-snmp/data_access/swrun.h>
+#include "swrun_private.h"
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -120,7 +121,7 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
          * skip empty names.
          * p_stat = (SIDL|SRUN|SSLEEP|SSTOP|SZOMB)
          */
-        if ((NULL == processes[i].kp_proc.p_comm) ||
+        if (('\0' == processes[i].kp_proc.p_comm[0]) ||
             (0 == processes[i].kp_proc.p_pid)) {
             DEBUGMSGTL(("swrun:load:arch",
                         " skipping p_comm '%s', pid %5d, p_pstat %d\n",
@@ -172,9 +173,10 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
          * check for system processes
          */
         if (P_SYSTEM & processes[i].kp_proc.p_flag) {
-            entry->hrSWRunType = 2; /* operatingSystem */
+            entry->hrSWRunType = HRSWRUNTYPE_OPERATINGSYSTEM;
             DEBUGMSGTL(("swrun:load:arch", SWRUNINDENT "SYSTEM\n"));
         }
+        else entry->hrSWRunType = HRSWRUNTYPE_APPLICATION;
 
         /*
          * get mem size, run time
@@ -192,7 +194,7 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
             } at, ns;
             at.uq = taskinfo.ptinfo.pti_total_user +
                     taskinfo.ptinfo.pti_total_system;
-            ns.uw = AbsoluteToNanoseconds( at.uw );
+            ns = at;
             ns.uq = ns.uq / 10000000LL; /* nano to deci */
             if (task_mem > INT32_MAX) {
                 DEBUGMSGTL(("swrun:load:arch", SWRUNINDENT "mem overflow\n"));
@@ -209,7 +211,7 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
     free(processes);
 
     DEBUGMSGTL(("swrun:load:arch"," loaded %d entries\n",
-                CONTAINER_SIZE(container)));
+                (int)CONTAINER_SIZE(container)));
 
     return 0;
 }
@@ -289,8 +291,7 @@ _set_command_name_jaguar(netsnmp_swrun_entry *entry)
     exec_path = (char *)ip;
     DEBUGMSGTL(("swrun:load:arch:_cn"," exec_path %s\n", exec_path));
     len = strlen(exec_path);
-    strncpy(entry->hrSWRunPath, exec_path, sizeof(entry->hrSWRunPath)-1);
-    entry->hrSWRunPath[sizeof(entry->hrSWRunPath)-1] = 0;
+    strlcpy(entry->hrSWRunPath, exec_path, sizeof(entry->hrSWRunPath));
     if (len > sizeof(entry->hrSWRunPath)-1) {
         DEBUGMSGTL(("swrun:load:arch:_cn"," truncating long run path\n"));
         entry->hrSWRunPath[sizeof(entry->hrSWRunPath)-2] = '$';
@@ -326,8 +327,7 @@ _set_command_name_jaguar(netsnmp_swrun_entry *entry)
     DEBUGMSGTL(("swrun:load:arch:_cn",
                 SWRUNINDENT "kernel name %s\n", command));
     if (strncmp(command, entry->hrSWRunName, sizeof(entry->hrSWRunName)-1)) {
-        strncpy(entry->hrSWRunName, command, sizeof(entry->hrSWRunName)-1);
-        entry->hrSWRunName[sizeof(entry->hrSWRunName)-1] = 0;
+        strlcpy(entry->hrSWRunName, command, sizeof(entry->hrSWRunName));
         entry->hrSWRunName_len = strlen(entry->hrSWRunName);
         DEBUGMSGTL(("swrun:load:arch:_cn", "**"
                     SWRUNINDENT "updated name to %s\n", entry->hrSWRunName));
@@ -369,8 +369,7 @@ _set_command_name(netsnmp_swrun_entry *entry)
 
     exec_path = arg_buf + sizeof(nargs);
     len = strlen(exec_path);
-    strncpy(entry->hrSWRunPath, exec_path, sizeof(entry->hrSWRunPath)-1);
-    entry->hrSWRunPath[sizeof(entry->hrSWRunPath)-1] = 0;
+    strlcpy(entry->hrSWRunPath, exec_path, sizeof(entry->hrSWRunPath));
     if (len > sizeof(entry->hrSWRunPath)-1) {
         DEBUGMSGTL(("swrun:load:arch:_cn"," truncating long run path\n"));
         entry->hrSWRunPath[sizeof(entry->hrSWRunPath)-2] = '$';
@@ -388,8 +387,8 @@ _set_command_name(netsnmp_swrun_entry *entry)
             break; /* End of exec_path reached. */
     }
     if (cp != exec_path + len) {
-        DEBUGMSGTL(("swrun:load:arch:_cn"," OFF BY %d\n",
-                    (exec_path + len) - cp));
+        DEBUGMSGTL(("swrun:load:arch:_cn", " OFF BY %d\n",
+                    (int)((exec_path + len) - cp)));
         netsnmp_assert( cp == exec_path + len );
     }
 #endif
@@ -459,8 +458,8 @@ _set_command_name(netsnmp_swrun_entry *entry)
          * save arg
          */
         if(entry->hrSWRunParameters_len < sizeof(entry->hrSWRunParameters)-1) {
-            strncat(&entry->hrSWRunParameters[entry->hrSWRunParameters_len], argN,
-                    sizeof(entry->hrSWRunParameters) - entry->hrSWRunParameters_len - 2);
+            strlcat(&entry->hrSWRunParameters[entry->hrSWRunParameters_len],
+                    argN, sizeof(entry->hrSWRunParameters)-entry->hrSWRunParameters_len-1);
             entry->hrSWRunParameters_len = strlen(entry->hrSWRunParameters);
             if ((entry->hrSWRunParameters_len+2 < sizeof(entry->hrSWRunParameters)-1) && (0 != nargs)) {
                 /* add space between params */
@@ -486,8 +485,7 @@ _set_command_name(netsnmp_swrun_entry *entry)
     
     /* Allocate space for the command and copy. */
     if (strncmp(command, entry->hrSWRunName, sizeof(entry->hrSWRunName)-1)) {
-        strncpy(entry->hrSWRunName, command, sizeof(entry->hrSWRunName)-1);
-        entry->hrSWRunName[sizeof(entry->hrSWRunName)-1] = 0;
+        strlcpy(entry->hrSWRunName, command, sizeof(entry->hrSWRunName));
         entry->hrSWRunName_len = strlen(entry->hrSWRunName);
         DEBUGMSGTL(("swrun:load:arch:_cn",
                     " **updated name to %s\n", entry->hrSWRunName));

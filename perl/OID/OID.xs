@@ -1,5 +1,8 @@
 /* -*- C -*- */
-#include <net-snmp/net-snmp-config.h>
+#if defined(_WIN32) && !defined(_WIN32_WINNT)
+#define _WIN32_WINNT 0x501
+#endif
+
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
@@ -16,11 +19,9 @@ typedef struct netsnmp_oid_s {
     oid                  namebuf[ MAX_OID_LEN ];
 } netsnmp_oid;
 
-static double
-constant(char *name, int len, int arg)
+static int constant(double *value, const char *name, const int len)
 {
-    errno = EINVAL;
-    return 0;
+    return EINVAL;
 }
 
 netsnmp_oid *
@@ -124,7 +125,7 @@ int flag;
           break;
 
         case ASN_BIT_STR:
-            snprint_bitstring(buf, sizeof(buf), var, NULL, NULL, NULL);
+            snprint_bitstring(buf, buf_len, var, NULL, NULL, NULL);
             len = strlen(buf);
             break;
 
@@ -171,18 +172,21 @@ nso_newptr(initstring)
     OUTPUT:
         RETVAL
 
-double
-constant(sv,arg)
+void
+constant(sv)
     PREINIT:
 	STRLEN		len;
     INPUT:
 	SV *		sv
 	char *		s = SvPV(sv, len);
-	int		arg
-    CODE:
-	RETVAL = constant(s,len,arg);
-    OUTPUT:
-	RETVAL
+    INIT:
+        int status;
+        double value;
+    PPCODE:
+        value = 0;
+        status = constant(&value, s, len);
+        XPUSHs(sv_2mortal(newSVuv(status)));
+        XPUSHs(sv_2mortal(newSVnv(value)));
 
 int
 _snmp_oid_compare(oid1, oid2)
@@ -245,7 +249,7 @@ nsop_get_indexes(oid1)
         struct tree    *tp, *tpe, *tpnode, *indexnode;
         struct index_list *index;
         netsnmp_variable_list vbdata;
-        u_char         *buf = NULL;
+        char           *buf = NULL;
         size_t          buf_len = 256, out_len = 0;
         oid name[MAX_OID_LEN];
         size_t name_len = MAX_OID_LEN;
@@ -366,7 +370,7 @@ nsop_get_indexes(oid1)
                                      1, name, name_len, &vbdata);
 */
                 snmp_free_var_internals(&vbdata);
-                av_push(myret, newSVpv((char *)buf, out_len));
+                av_push(myret, newSVpv(buf, out_len));
             }
             netsnmp_free(buf);
             RETVAL = newRV((SV *)myret);

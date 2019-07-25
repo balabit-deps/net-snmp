@@ -2,10 +2,9 @@
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
 #include <net-snmp/agent/hardware/sensors.h>
+#include "hw_sensors_private.h"
 
 
-extern NetsnmpCacheLoad netsnmp_sensor_arch_load;
-extern void             netsnmp_sensor_arch_init( void );
 static int  _sensor_load( void );
 static void _sensor_free( void );
 
@@ -163,7 +162,12 @@ sensor_by_name( const char *name, int create_type )
      */
     sp = SNMP_MALLOC_TYPEDEF( netsnmp_sensor_info );
     if ( sp ) {
-        strcpy( sp->name, name );
+        if (strlen(name) >= sizeof(sp->name)) {
+            snmp_log(LOG_ERR, "Sensor name is too large: %s\n", name);
+            free(sp);
+            return NULL;
+        }
+        strlcpy(sp->name, name, sizeof(sp->name));
         sp->type = create_type;
         /*
          * Set up the index value.

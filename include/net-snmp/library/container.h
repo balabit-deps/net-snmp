@@ -7,12 +7,17 @@
  * Copyright (C) 2007 Apple, Inc. All rights reserved.
  * Use is subject to license terms specified in the COPYING file
  * distributed with the Net-SNMP package.
+ *
+ * Portions of this file are copyrighted by:
+ * Copyright (c) 2016 VMware, Inc. All rights reserved.
+ * Use is subject to license terms specified in the COPYING file
+ * distributed with the Net-SNMP package.
  */
 #ifndef NETSNMP_CONTAINER_H
 #define NETSNMP_CONTAINER_H
 
 /*
- * $Id: container.h 18910 2010-05-30 19:16:50Z bvassche $
+ * $Id$
  *
  * WARNING: This is a recently created file, and all of it's contents are
  *          subject to change at any time.
@@ -77,6 +82,21 @@ extern "C" {
      */
     typedef int (netsnmp_container_op)(struct netsnmp_container_s *,
                                        const void *data);
+
+    /*
+     * function returning an int for an operation on an object at a given
+     * position in a container (for containers supporting direct access)
+     */
+    typedef int (netsnmp_container_da_op)(struct netsnmp_container_s *,
+                                          size_t pos, void *data);
+
+    /*
+     * function returning an int and an object at a given position in a
+     * container (for containers supporting direct access)
+     */
+    typedef int (netsnmp_container_da_op_rtn)(struct netsnmp_container_s *,
+                                          size_t pos,
+                                          void **data);
 
     /*
      * function returning an oject for an operation on an object and a
@@ -147,9 +167,20 @@ extern "C" {
        netsnmp_container_op    *insert;
 
        /*
+        * add an entry to the container at a given position
+        */
+       netsnmp_container_da_op *insert_before;
+       netsnmp_container_da_op *insert_after;
+
+       /*
         * remove an entry from the container
         */
        netsnmp_container_op    *remove;
+
+       /*
+        * remove an entry from the container at a given position
+        */
+       netsnmp_container_da_op_rtn *remove_at;
 
        /*
         * release memory for an entry from the container
@@ -172,6 +203,11 @@ extern "C" {
         * If the key is NULL, return the first item in the container.
         */
        netsnmp_container_rtn   *find_next;
+
+       /*
+        * get entry at the given index (for containers supporting direct access
+        */
+       netsnmp_container_da_op_rtn *get_at;
 
        /*
         * find all entries in the container which match the partial key
@@ -309,6 +345,7 @@ extern "C" {
     int netsnmp_ncompare_cstring(const void * lhs, const void * rhs);
 
     /** useful for octet strings */
+    NETSNMP_IMPORT
     int netsnmp_compare_mem(const char * lhs, size_t lhs_len,
                             const char * rhs, size_t rhs_len);
 
@@ -329,6 +366,8 @@ extern "C" {
  */
 #define CONTAINER_KEY_ALLOW_DUPLICATES             0x00000001
 #define CONTAINER_KEY_UNSORTED                     0x00000002
+    /* ... */
+#define CONTAINER_FLAG_INTERNAL_1                  0x80000000
 
 #define CONTAINER_SET_OPTIONS(x,o,rc)  do {                             \
         if (NULL==(x)->options)                                         \
@@ -368,20 +407,40 @@ extern "C" {
      * inline functions, you most likely have optimizations turned off.
      * Either turn them back on, or define NETSNMP_NO_INLINE
      */
-#ifndef NETSNMP_USE_INLINE /* default is to inline */
     /*
      * insert k into all containers
      */
+    NETSNMP_IMPORT
     int CONTAINER_INSERT(netsnmp_container *x, const void *k);
+
+    /*
+     * insert item before given position
+     */
+    NETSNMP_IMPORT
+    int CONTAINER_INSERT_BEFORE(netsnmp_container *x, size_t pos, void *k);
 
     /*
      * remove k from all containers
      */
+    NETSNMP_IMPORT
     int CONTAINER_REMOVE(netsnmp_container *x, const void *k);
+
+    /*
+     * remove item at given position
+     */
+    NETSNMP_IMPORT
+    int CONTAINER_REMOVE_AT(netsnmp_container *x, size_t pos, void **k);
+
+    /*
+     * get item at given position
+     */
+    NETSNMP_IMPORT
+    int CONTAINER_GET_AT(netsnmp_container *x, size_t pos, void **k);
 
     /*
      * duplicate container
      */
+    NETSNMP_IMPORT
     netsnmp_container *CONTAINER_DUP(netsnmp_container *x, void *ctx,
                                      u_int flags);
 
@@ -390,6 +449,7 @@ extern "C" {
      * *only* the first container, call the function f for each item.
      * After calling this function, all containers should be empty.
      */
+    NETSNMP_IMPORT
     void CONTAINER_CLEAR(netsnmp_container *x, netsnmp_container_obj_func *f,
                         void *c);
 
@@ -398,186 +458,18 @@ extern "C" {
      * *only* the first container, call the free_item function for each item.
      * After calling this function, all containers should be empty.
      */
+    NETSNMP_IMPORT
     void CONTAINER_FREE_ALL(netsnmp_container *x, void *c);
 
     /*
      * free all containers
      */
+    NETSNMP_IMPORT
     int CONTAINER_FREE(netsnmp_container *x);
 
+    NETSNMP_IMPORT
     netsnmp_container *SUBCONTAINER_FIND(netsnmp_container *x,
                                          const char* name);
-#else
-    /*------------------------------------------------------------------
-     * These functions should EXACTLY match the function version in
-     * container.c. If you change one, change them both.
-     */
-    NETSNMP_STATIC_INLINE /* gcc docs recommend static w/inline */
-    int CONTAINER_INSERT_HELPER(netsnmp_container* x, const void* k)
-    {
-        while(x && x->insert_filter && x->insert_filter(x,k) == 1)
-            x = x->next;
-        if(x) {
-            int rc = x->insert(x,k);
-            if(rc)
-                snmp_log(LOG_DEBUG,"error on subcontainer '%s' insert (%d)\n",
-                         x->container_name ? x->container_name : "", rc);
-            else {
-                rc = CONTAINER_INSERT_HELPER(x->next, k);
-                if(rc)
-                    x->remove(x,k);
-            }
-            return rc;
-        }
-        return 0;
-    }
-
-    /*------------------------------------------------------------------
-     * These functions should EXACTLY match the function version in
-     * container.c. If you change one, change them both.
-     */
-    NETSNMP_STATIC_INLINE /* gcc docs recommend static w/inline */
-    int CONTAINER_INSERT(netsnmp_container* x, const void* k)
-    {
-        /** start at first container */
-        while(x->prev)
-            x = x->prev;
-        return CONTAINER_INSERT_HELPER(x, k);
-    }
-
-    /*------------------------------------------------------------------
-     * These functions should EXACTLY match the function version in
-     * container.c. If you change one, change them both.
-     */
-    NETSNMP_STATIC_INLINE /* gcc docs recommend static w/inline */
-    int CONTAINER_REMOVE(netsnmp_container *x, const void *k)
-    {
-        int rc2, rc = 0;
-        
-        /** start at last container */
-        while(x->next)
-            x = x->next;
-        while(x) {
-            rc2 = x->remove(x,k);
-            /** ignore remove errors if there is a filter in place */
-            if ((rc2) && (NULL == x->insert_filter)) {
-                snmp_log(LOG_ERR,"error on subcontainer '%s' remove (%d)\n",
-                         x->container_name ? x->container_name : "", rc2);
-                rc = rc2;
-            }
-            x = x->prev;
-            
-        }
-        return rc;
-    }
-    
-    /*------------------------------------------------------------------
-     * These functions should EXACTLY match the function version in
-     * container.c. If you change one, change them both.
-     */
-    NETSNMP_STATIC_INLINE /* gcc docs recommend static w/inline */
-    netsnmp_container *CONTAINER_DUP(netsnmp_container *x, void *ctx,
-                                     u_int flags)
-    {
-        if (NULL == x->duplicate) {
-            snmp_log(LOG_ERR, "container '%s' does not support duplicate\n",
-                     x->container_name ? x->container_name : "");
-            return NULL;
-        }
-        return x->duplicate(x, ctx, flags);
-    }
-
-    /*------------------------------------------------------------------
-     * These functions should EXACTLY match the function version in
-     * container.c. If you change one, change them both.
-     */
-    NETSNMP_STATIC_INLINE /* gcc docs recommend static w/inline */
-    int CONTAINER_FREE(netsnmp_container *x)
-    {
-	int  rc2, rc = 0;
-        
-        /** start at last container */
-        while(x->next)
-            x = x->next;
-        while(x) {
-            netsnmp_container *tmp;
-            char *name;
-            tmp = x->prev;
-            name = x->container_name;
-            x->container_name = NULL;
-            rc2 = x->cfree(x);
-            if (rc2) {
-                snmp_log(LOG_ERR,"error on subcontainer '%s' cfree (%d)\n",
-                         name ? name : "", rc2);
-                rc = rc2;
-            }
-            SNMP_FREE(name);
-            x = tmp;
-        }
-        return rc;
-    }
-
-    /*------------------------------------------------------------------
-     * These functions should EXACTLY match the function version in
-     * container.c. If you change one, change them both.
-     */
-    /*
-     * clear all containers. When clearing the *first* container, and
-     * *only* the first container, call the function f for each item.
-     * After calling this function, all containers should be empty.
-     */
-    NETSNMP_STATIC_INLINE /* gcc docs recommend static w/inline */
-    void CONTAINER_CLEAR(netsnmp_container *x, netsnmp_container_obj_func *f,
-                        void *c)
-    {
-        /** start at last container */
-        while(x->next)
-            x = x->next;
-        while(x->prev) {
-            x->clear(x, NULL, c);
-            x = x->prev;
-        }
-        x->clear(x, f, c);
-    }
-
-    /*
-     * clear all containers. When clearing the *first* container, and
-     * *only* the first container, call the free_item function for each item.
-     * After calling this function, all containers should be empty.
-     */
-    NETSNMP_STATIC_INLINE /* gcc docs recommend static w/inline */
-    void CONTAINER_FREE_ALL(netsnmp_container *x, void *c)
-    {
-        CONTAINER_CLEAR(x, x->free_item, c);
-    }
-
-    /*------------------------------------------------------------------
-     * These functions should EXACTLY match the function version in
-     * container.c. If you change one, change them both.
-     */
-    /*
-     * Find a sub-container with the given name
-     */
-    NETSNMP_STATIC_INLINE /* gcc docs recommend static w/inline */
-    netsnmp_container *SUBCONTAINER_FIND(netsnmp_container *x,
-                                         const char* name)
-    {
-        if ((NULL == x) || (NULL == name))
-            return NULL;
-
-        /** start at first container */
-        while(x->prev)
-            x = x->prev;
-        while(x) {
-            if ((NULL != x->container_name) &&
-                (0 == strcmp(name,x->container_name)))
-                break;
-            x = x->next;
-        }
-        return x;
-    }
-
-#endif
 
     /*
      * INTERNAL utility routines for container implementations

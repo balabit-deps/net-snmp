@@ -3,6 +3,7 @@
 #include <net-snmp/agent/net-snmp-agent-includes.h>
 #include <net-snmp/agent/hardware/fsys.h>
 #include "hardware/fsys/hw_fsys.h"
+#include "hardware/fsys/hw_fsys_private.h"
 
 #if HAVE_SYS_PARAM_H
 #include <sys/param.h>
@@ -24,7 +25,7 @@
 #define NSFS_NAMELEN  MNAMELEN
 #endif
 
-#if defined(HAVE_GETVFSSTAT)
+#if defined(HAVE_GETVFSSTAT) && defined(__NetBSD__)
 #define NSFS_GETFSSTAT  getvfsstat
 #define NSFS_STATFS     statvfs
 #define NSFS_FLAGS      f_flag
@@ -33,29 +34,6 @@
 #define NSFS_STATFS     statfs
 #define NSFS_FLAGS      f_flags
 #endif
-
-/*
-#if defined(HAVE_STATVFS)
-#define NSFS_STATFS     statvfs
-#define NSFS_FLAGS      f_flag
-#else
-#define NSFS_STATFS     statfs
-#define NSFS_FLAGS      f_flags
-#endif
-*/
-
-/*
-#if defined(HAVE_STATVFS) && defined(__NetBSD__)
-#define NSFS_NAMELEN    _VFS_NAMELEN
-#define NSFS_GETFSSTAT  getvfsstat
-#define NSFS_STATFS     statvfs
-#else
-#define NSFS_FLAGS      f_flags
-#define NSFS_NAMELEN    _VFS_NAMELEN
-#define NSFS_GETFSSTAT  getvfsstat
-#define NSFS_STATFS     statvfs
-#endif
-*/
 
 int
 _fs_type( char *typename )
@@ -88,6 +66,12 @@ _fs_type( char *typename )
        return NETSNMP_FS_TYPE_EXT2;
     else if ( !strcmp(typename, MOUNT_NTFS) )
        return NETSNMP_FS_TYPE_NTFS;
+    else if ( !strcmp(typename, MOUNT_ZFS) )
+       return NETSNMP_FS_TYPE_OTHER;
+    else if ( !strcmp(typename, MOUNT_NVMFS) )
+       return NETSNMP_FS_TYPE_OTHER;
+    else if ( !strcmp(typename, MOUNT_ACFS) )
+       return NETSNMP_FS_TYPE_OTHER;
 
        /*
         * NetBSD also recognises the following filesystem types:
@@ -135,7 +119,7 @@ netsnmp_fsys_arch_load( void )
     /*
      * Retrieve information about the currently mounted filesystems...
      */
-    n = NSFS_GETFSSTAT( NULL, 0, 0 );
+    n = NSFS_GETFSSTAT( NULL, 0, MNT_NOWAIT );
     if ( n==0 )
         return;
     stats = (struct NSFS_STATFS *)malloc( n * sizeof( struct NSFS_STATFS ));
@@ -150,21 +134,28 @@ netsnmp_fsys_arch_load( void )
         if (!entry)
             continue;
 
-        memcpy( entry->path,   stats[i].f_mntonname,   sizeof(entry->path)  );
+        strlcpy( entry->path,   stats[i].f_mntonname,   sizeof(entry->path));
         entry->path[sizeof(entry->path)-1] = '\0';
-        memcpy( entry->device, stats[i].f_mntfromname, sizeof(entry->device));
+        strlcpy( entry->device, stats[i].f_mntfromname, sizeof(entry->device));
         entry->device[sizeof(entry->device)-1] = '\0';
         entry->units = stats[i].f_bsize;    /* or f_frsize */
         entry->size  = stats[i].f_blocks;
-        entry->used  = stats[i].f_bfree;
-        entry->avail = stats[i].f_bavail;
+        entry->used  = (stats[i].f_blocks - stats[i].f_bfree);
+        /* entry->avail is currently unsigned, so protect against negative
+         * values!
+         * This should be changed to a signed field.
+         */
+        if (stats[i].f_bavail < 0)
+            entry->avail = 0;
+        else
+            entry->avail = stats[i].f_bavail;
         entry->inums_total = stats[i].f_files;
         entry->inums_avail = stats[i].f_ffree;
 
         entry->type = _fs_type( stats[i].f_fstypename );
         entry->flags |= NETSNMP_FS_FLAG_ACTIVE;
 
-        if (! stats[i].NSFS_FLAGS & MNT_LOCAL ) {
+        if (! (stats[i].NSFS_FLAGS & MNT_LOCAL )) {
             entry->flags |= NETSNMP_FS_FLAG_REMOTE;
         }
         if (  stats[i].NSFS_FLAGS & MNT_RDONLY ) {
@@ -173,6 +164,8 @@ netsnmp_fsys_arch_load( void )
         if (  stats[i].NSFS_FLAGS & MNT_ROOTFS ) {
             entry->flags |= NETSNMP_FS_FLAG_BOOTABLE;
         }
-        
+        netsnmp_fsys_calculate32(entry);
     }
+
+    free(stats);
 }

@@ -52,7 +52,11 @@ auto_nlist_value(const char *string)
         }
     }
     if (*ptr == 0) {
+#if !(defined(aix4) || defined(aix5) || defined(aix6) || defined(aix7))
+        static char *n_name = NULL;
+#endif
         *ptr = (struct autonlist *) malloc(sizeof(struct autonlist));
+        memset(*ptr, 0, sizeof(struct autonlist));
         it = *ptr;
         it->left = 0;
         it->right = 0;
@@ -65,21 +69,42 @@ auto_nlist_value(const char *string)
 #if defined(aix4) || defined(aix5) || defined(aix6) || defined(aix7)
         strcpy(it->nl[0].n_name, string);
         it->nl[0].n_name[strlen(string)+1] = '\0';
-#elif defined(freebsd9) || defined(freebsd10)
+#elif defined(freebsd9)
         sprintf(__DECONST(char*, it->nl[0].n_name), "_%s", string);
 #else
-        sprintf(it->nl[0].n_name, "_%s", string);
+
+        if (n_name != NULL)
+            free(n_name);
+
+        n_name = malloc(strlen(string) + 2);
+        if (n_name == NULL) {
+            snmp_log(LOG_ERR, "nlist err: failed to allocate memory");
+            return (-1);
+        }
+        snprintf(n_name, strlen(string) + 2, "_%s", string);
+        it->nl[0].n_name = (const char*)n_name;
 #endif
         it->nl[1].n_name = 0;
         init_nlist(it->nl);
-#if !(defined(aix4) || defined(aix5) || defined(aix6) || defined(aix7))
+#if !(defined(aix4) || defined(aix5) || defined(aix6) || defined(aix7) || \
+                    defined(netbsd1) || defined(dragonfly))
         if (it->nl[0].n_type == 0) {
-#if defined(freebsd9) || defined(freebsd10)
+#if defined(freebsd9)
             strcpy(__DECONST(char*, it->nl[0].n_name), string);
             __DECONST(char*, it->nl[0].n_name)[strlen(string)+1] = '\0';
 #else
-            strcpy(it->nl[0].n_name, string);
-            it->nl[0].n_name[strlen(string)+1] = '\0';
+            static char *n_name2 = NULL;
+
+            if (n_name2 != NULL)
+                free(n_name2);
+
+            n_name2 = malloc(strlen(string) + 1);
+            if (n_name2 == NULL) {
+                snmp_log(LOG_ERR, "nlist err: failed to allocate memory");
+                return (-1);
+            }
+            strcpy(n_name2, string);
+            it->nl[0].n_name = (const char*)n_name2;
 #endif
             init_nlist(it->nl);
         }

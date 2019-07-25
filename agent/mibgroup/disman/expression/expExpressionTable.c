@@ -21,6 +21,7 @@
  * This should always be included first before anything else 
  */
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #if HAVE_STDLIB_H
 #include <stdlib.h>
 #endif
@@ -45,6 +46,10 @@
 #include "expObjectTable.h"
 #include "expValueTable.h"
 
+netsnmp_feature_require(tdomain_support)
+#ifndef NETSNMP_NO_WRITE_SUPPORT
+netsnmp_feature_require(header_complex_find_entry)
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
 
 /*
  * expExpressionTable_variables_oid:
@@ -92,8 +97,6 @@ struct variable2 expExpressionTable_variables[] = {
  */
 
 struct header_complex_index *expExpressionTableStorage = NULL;
-extern struct header_complex_index *expObjectTableStorage;
-extern struct header_complex_index *expValueTableStorage;
 
 oid             mmTimeInstance[] = { 1, 3, 6, 1, 2, 1, 1, 3, 0 };
 
@@ -318,9 +321,7 @@ store_expExpressionTable(int majorID, int minorID, void *serverarg,
     char           *cptr;
     size_t          tmpint;
     struct expExpressionTable_data *StorageTmp;
-    struct expObjectTable_data *ObjectStorageTmp;
-    struct expValueTable_data *ValueStorageTmp;
-    struct header_complex_index *hcindex, *hc_object, *hc_value;
+    struct header_complex_index *hcindex;
 
     DEBUGMSGTL(("expExpressionTable", "storing data...  "));
 
@@ -560,8 +561,10 @@ write_expExpression(int action,
          */
         tmpvar = StorageTmp->expExpression;
         tmplen = StorageTmp->expExpressionLen;
-        memdup((u_char **) & StorageTmp->expExpression, var_val,
-               var_val_len);
+        StorageTmp->expExpression = malloc(var_val_len + 1);
+        if (StorageTmp->expExpression)
+            snprintf(StorageTmp->expExpression, var_val_len + 1, "%.*s",
+                     (int)var_val_len, var_val);
         StorageTmp->expExpressionLen = var_val_len;
         break;
 
@@ -735,8 +738,7 @@ write_expExpressionComment(int action,
          */
         tmpvar = StorageTmp->expExpressionComment;
         tmplen = StorageTmp->expExpressionCommentLen;
-        memdup((u_char **) & StorageTmp->expExpressionComment, var_val,
-               var_val_len);
+        StorageTmp->expExpressionComment = netsnmp_memdup(var_val, var_val_len);
         StorageTmp->expExpressionCommentLen = var_val_len;
         break;
 
@@ -1028,7 +1030,7 @@ write_expExpressionEntryStatus(int action,
          */
 
 
-        if (StorageTmp == NULL) {
+        if (StorageTmp == NULL && set_value != RS_DESTROY) {
             /*
              * row creation, so add it 
              */
@@ -1037,7 +1039,7 @@ write_expExpressionEntryStatus(int action,
             /*
              * XXX: ack, and if it is NULL? 
              */
-        } else if (set_value != RS_DESTROY) {
+        } else if (StorageTmp && set_value != RS_DESTROY) {
             /*
              * set the flag? 
              */

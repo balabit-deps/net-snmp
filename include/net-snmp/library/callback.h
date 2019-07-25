@@ -10,7 +10,7 @@ extern          "C" {
 #endif
 
 #define MAX_CALLBACK_IDS    2
-#define MAX_CALLBACK_SUBIDS 16
+#define MAX_CALLBACK_SUBIDS 17
 
     /*
      * Callback Major Types 
@@ -54,6 +54,7 @@ extern          "C" {
     NETSNMP_IMPORT
     void            init_callbacks(void);
 
+    NETSNMP_IMPORT
     int             netsnmp_register_callback(int major, int minor,
                                               SNMPCallback * new_callback,
                                               void *arg, int priority);

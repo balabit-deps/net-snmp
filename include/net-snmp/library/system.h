@@ -5,6 +5,8 @@
 #error "Please include <net-snmp/net-snmp-config.h> before this file"
 #endif
 
+#include <stdarg.h> /* va_list */
+
 #ifdef __cplusplus
 extern          "C" {
 #endif
@@ -131,6 +133,20 @@ SOFTWARE.
     int             netsnmp_gethostbyname_v4(const char* name,
                                              in_addr_t *addr_out);
 
+    /** netsnmp versions of dns resoloution.. may include DNSSEC validation. */
+    struct addrinfo; /* forward declare */
+    NETSNMP_IMPORT
+    struct hostent *netsnmp_gethostbyname(const char *name);
+
+    NETSNMP_IMPORT
+    struct hostent *netsnmp_gethostbyaddr(const void *addr, socklen_t len,
+                                          int type);
+
+    NETSNMP_IMPORT
+    int             netsnmp_getaddrinfo(const char *name, const char *service,
+                                        const struct addrinfo *hints,
+                                        struct addrinfo **res);
+
     NETSNMP_IMPORT
     in_addr_t       get_myaddr(void);
     NETSNMP_IMPORT
@@ -170,6 +186,12 @@ SOFTWARE.
 #ifndef HAVE_SNPRINTF
     int             snprintf(char *, size_t, const char *, ...);
 #endif
+#ifndef HAVE_ASPRINTF
+    NETSNMP_IMPORT
+    int vasprintf(char **strp, const char *fmt, va_list ap);
+    NETSNMP_IMPORT
+    int asprintf(char **strp, const char *fmt, ...);
+#endif
 
     NETSNMP_IMPORT
     int             mkdirhier(const char *pathname, mode_t mode,
@@ -179,6 +201,10 @@ SOFTWARE.
 #ifndef HAVE_STRLCPY
     NETSNMP_IMPORT
     size_t            strlcpy(char *, const char *, size_t);
+#endif
+#ifndef HAVE_STRLCAT
+    NETSNMP_IMPORT
+    size_t            strlcat(char *, const char *, size_t);
 #endif
 
     int             netsnmp_os_prematch(const char *ospmname,

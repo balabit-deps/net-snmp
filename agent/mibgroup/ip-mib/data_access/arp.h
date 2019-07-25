@@ -1,7 +1,7 @@
 /*
  * arp data access header
  *
- * $Id: arp.h 16374 2007-05-17 13:35:57Z magfr $
+ * $Id$
  */
 /**---------------------------------------------------------------------*/
 /*
@@ -18,8 +18,12 @@
  *    be handled in the *_hpux.h header file.
  */
 config_require(ip-mib/data_access/arp_common)
-#if defined( linux )
+#if defined( HAVE_LINUX_RTNETLINK_H )
+config_require(ip-mib/data_access/arp_netlink)
+#elif defined( linux )
 config_require(ip-mib/data_access/arp_linux)
+#elif defined( freebsd7 ) || defined ( netbsd5 ) || defined( openbsd4 ) || defined( dragonfly ) || defined( darwin )
+config_require(ip-mib/data_access/arp_sysctl)
 #else
 /*
  * couldn't determine the correct file!

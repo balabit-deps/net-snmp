@@ -14,6 +14,7 @@
  */
 
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
 #include <net-snmp/agent/hardware/memory.h>
@@ -22,6 +23,7 @@
 #include "hrh_filesys.h"
 #include "hrh_storage.h"
 #include "hr_disk.h"
+#include "hr_filesys.h"
 #include <net-snmp/utilities.h>
 
 #if HAVE_MNTENT_H
@@ -60,6 +62,8 @@
 #include <sys/statfs.h>
 #endif
 
+netsnmp_feature_require(date_n_time)
+netsnmp_feature_require(ctime_to_timet)
 
 #define HRFS_MONOTONICALLY_INCREASING
 
@@ -74,9 +78,6 @@ netsnmp_fsys_info *HRFS_entry;
 #define	FULL_DUMP	0
 #define	PART_DUMP	1
 
-extern void     Init_HR_FileSys(void);
-extern int      Get_Next_HR_FileSys(void);
-char           *cook_device(char *);
 static u_char  *when_dumped(char *filesys, int level, size_t * length);
 int             header_hrhfilesys(struct variable *, oid *, size_t *, int,
                                  size_t *, WriteMethod **);
@@ -186,7 +187,7 @@ header_hrhfilesys(struct variable *vp,
     memcpy((char *) name, (char *) newname,
            (vp->namelen + 1) * sizeof(oid));
     *length = vp->namelen + 1;
-    *write_method = 0;
+    *write_method = NULL;
     *var_len = sizeof(long);    /* default to 'long' results */
 
     DEBUGMSGTL(("host/hr_filesys", "... get filesys stats "));
@@ -217,7 +218,7 @@ var_hrhfilesys(struct variable *vp,
               int exact, size_t * var_len, WriteMethod ** write_method)
 {
     int             fsys_idx;
-    static char     string[1024];
+    static char    *string;
 
     fsys_idx =
         header_hrhfilesys(vp, name, length, exact, var_len, write_method);
@@ -229,17 +230,21 @@ var_hrhfilesys(struct variable *vp,
         long_return = fsys_idx;
         return (u_char *) & long_return;
     case HRFSYS_MOUNT:
-        snprintf(string, sizeof(string), "%s", HRFS_entry->path);
-        string[ sizeof(string)-1 ] = 0;
-        *var_len = strlen(string);
+        free(string);
+        string = NULL;
+        *var_len = 0;
+        if (asprintf(&string, "%s", HRFS_entry->path) >= 0)
+            *var_len = strlen(string);
         return (u_char *) string;
     case HRFSYS_RMOUNT:
+        free(string);
         if (HRFS_entry->flags & NETSNMP_FS_FLAG_REMOTE) {
-            snprintf(string, sizeof(string), "%s", HRFS_entry->device);
-            string[ sizeof(string)-1 ] = 0;
-        } else
-            string[0] = '\0';
-        *var_len = strlen(string);
+            if (asprintf(&string, "%s", HRFS_entry->device) < 0)
+                string = NULL;
+        } else {
+            string = strdup("");
+        }
+        *var_len = string ? strlen(string) : 0;
         return (u_char *) string;
 
     case HRFSYS_TYPE:
@@ -347,13 +352,13 @@ when_dumped(char *filesys, int level, size_t * length)
                 continue;
 
             ++cp2;
-            while (isspace(*cp2))
+            while (isspace(0xFF & *cp2))
                 ++cp2;          /* Now find the dump level */
 
             if (level == FULL_DUMP) {
                 if (*(cp2++) != '0')
                     continue;   /* Not interested in partial dumps */
-                while (isspace(*cp2))
+                while (isspace(0xFF & *cp2))
                     ++cp2;
 
                 dumpdate = ctime_to_timet(cp2);
@@ -362,7 +367,7 @@ when_dumped(char *filesys, int level, size_t * length)
             } else {            /* Partial Dump */
                 if (*(cp2++) == '0')
                     continue;   /* Not interested in full dumps */
-                while (isspace(*cp2))
+                while (isspace(0xFF & *cp2))
                     ++cp2;
 
                 tmp = ctime_to_timet(cp2);
@@ -387,17 +392,14 @@ cook_device(char *dev)
     static char     cooked_dev[SNMP_MAXPATH+1];
 
     if (!strncmp(dev, RAW_DEVICE_PREFIX, strlen(RAW_DEVICE_PREFIX))) {
-        strncpy(cooked_dev, COOKED_DEVICE_PREFIX, sizeof(cooked_dev)-1);
-        cooked_dev[ sizeof(cooked_dev)-1 ] = 0;
-        strncat(cooked_dev, dev + strlen(RAW_DEVICE_PREFIX),
-                sizeof(cooked_dev)-strlen(cooked_dev)-1);
-        cooked_dev[ sizeof(cooked_dev)-1 ] = 0;
+        strlcpy(cooked_dev, COOKED_DEVICE_PREFIX, sizeof(cooked_dev));
+        strlcat(cooked_dev, dev + strlen(RAW_DEVICE_PREFIX),
+                sizeof(cooked_dev));
     } else {
-        strncpy(cooked_dev, dev, sizeof(cooked_dev)-1);
-        cooked_dev[ sizeof(cooked_dev)-1 ] = 0;
+        strlcpy(cooked_dev, dev, sizeof(cooked_dev));
     }
 
-    return (cooked_dev);
+    return cooked_dev;
 }
 
 

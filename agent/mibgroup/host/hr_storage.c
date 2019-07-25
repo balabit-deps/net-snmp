@@ -106,8 +106,7 @@
 #endif                          /* if HAVE_SYS_SYSCTL_H */
 #endif                          /* ifndef dynix */
 
-#if (defined(aix4) || defined(aix5) || defined(aix6) || defined(aix7)) && HAVE_LI
-BPERFSTAT_H
+#if (defined(aix4) || defined(aix5) || defined(aix6) || defined(aix7)) && HAVE_LIBPERFSTAT_H
 #ifdef HAVE_SYS_PROTOSW_H
 #include <sys/protosw.h>
 #endif
@@ -260,10 +259,6 @@ void*           header_hrstoreEntry(struct variable *, oid *, size_t *,
                                     int, size_t *, WriteMethod **);
 Netsnmp_Node_Handler handle_memsize;
 
-#ifdef solaris2
-void            sol_get_swapinfo(int *, int *);
-#endif
-
 #define	HRSTORE_MEMSIZE		1
 #define	HRSTORE_INDEX		2
 #define	HRSTORE_TYPE		3
@@ -289,7 +284,6 @@ struct variable2 hrstore_variables[] = {
     {HRSTORE_FAILS, ASN_COUNTER, NETSNMP_OLDAPI_RONLY,
      var_hrstore, 1, {7}}
 };
-oid             hrstore_variables_oid[] = { 1, 3, 6, 1, 2, 1, 25, 2 };
 oid             hrMemorySize_oid[]   = { 1, 3, 6, 1, 2, 1, 25, 2, 2 };
 oid             hrStorageTable_oid[] = { 1, 3, 6, 1, 2, 1, 25, 2, 3, 1 };
 
@@ -596,8 +590,7 @@ really_try_next:
         return (u_char *) storage_type_id;
     case HRSTORE_DESCR:
         if (store_idx > NETSNMP_MEM_TYPE_MAX) {
-            strncpy(string, HRFS_entry->HRFS_mount, sizeof(string)-1);
-            string[ sizeof(string)-1 ] = 0;
+            strlcpy(string, HRFS_entry->HRFS_mount, sizeof(string));
             *var_len = strlen(string);
             return (u_char *) string;
         } else {
@@ -699,7 +692,7 @@ Get_Next_HR_Store(void)
 	}
 }
 
-#ifdef solaris2
+#if 0
 void
 sol_get_swapinfo(int *totalP, int *usedP)
 {

@@ -3,12 +3,16 @@
  */
 
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
+#include "agent_global_vars.h"
 
 #include <net-snmp/agent/table.h>
 #include <net-snmp/agent/table_iterator.h>
 #include "nsTransactionTable.h"
+
+netsnmp_feature_require(table_dataset)
 
 /** Initialize the nsTransactionTable table by defining it's contents
    and how it's structured */
@@ -61,10 +65,10 @@ initialize_table_nsTransactionTable(void)
      */
     DEBUGMSGTL(("initialize_table_nsTransactionTable",
                 "Registering table nsTransactionTable as a table iterator\n"));
-    netsnmp_register_table_iterator(my_handler, iinfo);
+    netsnmp_register_table_iterator2(my_handler, iinfo);
 }
 
-/** Initialzies the nsTransactionTable module */
+/** Initializes the nsTransactionTable module */
 void
 init_nsTransactionTable(void)
 {
@@ -92,8 +96,6 @@ init_nsTransactionTable(void)
     each appropriately according to the data matching the first row
     and return the put_index_data variable at the end of the function.
 */
-extern netsnmp_agent_session *agent_delegated_list;
-
 netsnmp_variable_list *
 nsTransactionTable_get_first_data_point(void **my_loop_context,
                                         void **my_data_context,
@@ -191,6 +193,7 @@ nsTransactionTable_handler(netsnmp_mib_handler *handler,
         if (asp == NULL) {
             netsnmp_set_request_error(reqinfo, requests,
                                       SNMP_NOSUCHINSTANCE);
+            continue;
         }
 
         /*

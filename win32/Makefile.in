@@ -5,6 +5,8 @@ PREFIX=
 PREFIX_DOS=
 PERL=
 NMAKE=nmake /nologo
+APPS=
+APPS_CLEAN=
 
 all : libs apps snmptrapd snmpd local
 
@@ -26,9 +28,9 @@ libsnmp_clean : libsnmp_dll_clean_
 libs : libagent libsnmp libnetsnmptrapd netsnmpmibs 
 libs_clean : libagent_clean libsnmp_clean libnetsnmptrapd_clean netsnmpmibs_clean
 
-apps : snmpdf snmpset snmpusm snmptest snmptrap snmpvacm snmpwalk snmpdelta snmptable snmpstatus snmpbulkget snmpget snmpgetnext snmpbulkwalk snmptranslate encode_keychange snmpnetstat
+apps : $(APPS)
 
-apps_clean : snmpdf_clean snmpset_clean snmpusm_clean snmptest_clean snmptrap_clean snmpvacm_clean snmpwalk_clean snmpdelta_clean snmptable_clean snmpstatus_clean snmpbulkget_clean snmpget_clean snmpgetnext_clean snmpbulkwalk_clean snmptranslate_clean encode_keychange_clean snmpnetstat_clean
+apps_clean : $(APPS_CLEAN)
 
 local : snmpconf mib2c traptoemail
 
@@ -105,17 +107,17 @@ libagent ::
 	cd libagent
 	$(NMAKE) all
 	cd ..
-       
+
 libsnmp_ ::
 	cd libsnmp
 	$(NMAKE) all
 	cd ..
-	
+
 libsnmp_dll_ ::
 	cd libsnmp_dll
 	$(NMAKE) all
 	cd ..
-	
+
 libnetsnmptrapd ::
 	cd libnetsnmptrapd
 	$(NMAKE) all
@@ -244,7 +246,7 @@ libagent_clean ::
 	cd libagent
 	$(NMAKE) clean
 	cd ..
-       
+
 libsnmp_clean_ ::
 	cd libsnmp
 	$(NMAKE) clean
@@ -388,11 +390,7 @@ help ::
         @-echo "libs_clean      libagent_clean libnetsnmptrapd_clean          "
         @-echo "                libsnmp_clean netsnmpmibs_clean               "
         @-echo "                                                              "
-        @-echo "apps            encode_keychange snmpbulkget snmpbulkwalk     "
-        @-echo "                snmpdelta snmpdf snmpget snmpgetnext          "
-        @-echo "                snmpnetstsat snmpset snmpstatus snmptable     "
-        @-echo "                snmptest snmptranslate snmptrap snmpusm       "
-        @-echo "                snmpvacm snmpwalk                             "
+        @-echo "apps            $(APPS)"
         @-echo "                                                              "
         @-echo "apps_clean      (clean all the apps)                          "
         @-echo "                                                              "
@@ -482,6 +480,9 @@ install_devel ::
         @-mkdir $(PREFIX_DOS)\include > NUL:
         @-mkdir $(PREFIX_DOS)\include\net-snmp > NUL:
 
+	@-echo Copying PDB files to $(PREFIX_DOS)\bin
+	@-Copy win32\bin\$(CFG)\*.pdb $(PREFIX_DOS)\bin > NUL:
+
 	@-echo Copying library files to $(PREFIX_DOS)\lib
         @-copy win32\lib\$(CFG)\*.lib $(PREFIX_DOS)\lib > NUL:
 
@@ -492,5 +493,9 @@ install_devel ::
         @-copy win32\net-snmp\library\*.h $(PREFIX_DOS)\include\net-snmp\library > NUL:
 
         @-echo Done copying files to $(PREFIX_DOS)
+
+	@-echo Copying PDB files to %SYSTEMROOT%\System32
+	@-Copy win32\bin\$(CFG)\*.pdb %SYSTEMROOT%\System32 > NUL:
+
         cd win32
 

@@ -11,9 +11,10 @@ found and read from.  By default, the applications look for
 configuration files in the following 4 directories, in order:
 SYSCONFDIR/snmp,
 DATADIR/snmp, LIBDIR/snmp, and $HOME/.snmp.  In each of these
-directories, it looks for files with the extension of both
-.IR conf " and " local.conf
-(reading the second ones last).  In this manner, there are
+directories, it looks for files snmp.conf, snmpd.conf and/or
+snmptrapd.conf, as well as snmp.local.conf, snmpd.local.conf
+and/or snmptrapd.local.conf. *.local.conf are always
+read last. In this manner, there are
 8 default places a configuration file can exist for any given
 configuration file type.
 .PP
@@ -30,21 +31,21 @@ in the following order of preference:
 file in 
 .B SNMP_PERSISTENT_FILE
 environment variable
-.PP
+.br
 directories in 
 .B SNMPCONFPATH
 environment variable
-.PP
+.br
 directory defined by 
 .B
 persistentDir 
 snmp.conf variable
-.PP
+.br
 directory in 
 .B
 SNMP_PERSISTENT_DIR 
 environment variable
-.PP
+.br
 default 
 .B
 PERSISTENT_DIRECTORY 
@@ -58,17 +59,17 @@ in the following order of preference:
 file in 
 .B SNMP_PERSISTENT_FILE
 environment variable
-.PP
+.br
 directory defined by 
 .B
 persistentDir 
 snmp.conf variable
-.PP
+.br
 directory in 
 .B
 SNMP_PERSISTENT_DIR 
 environment variable
-.PP
+.br
 default 
 .B
 PERSISTENT_DIRECTORY 
@@ -137,7 +138,36 @@ logTimestamp true
 # return to our original snmpd.conf tokens:
 [snmpd]
 rocommunity mypublic
+.fi
 .RE
+.PP
+The same approach can be used to set configuration directives for a
+particular client application (or group of applications).  For example,
+any program that uses the 'snmp_parse_args()' call to handle command-line
+arguments (including the standard command-line tools shipped as part of the
+Net-SNMP distributions) will automatically read the config file 'snmpapp.conf'.
+To set library-level settings for these applications (but not other
+more-specific tools), use configuration such as the following:
+.PP
+.RS
+[snmp] defCommunity myCommunity
+.RE
+.PP
+for a single directive, or
+.PP
+.RS
+.nf
+# make this file handle snmp.conf tokens:
+[snmp]
+defCommunity myCommunity
+defVersion   2c
+# return to our original snmpapp.conf tokens:
+[snmpapp]
+.fi
+.RE
+.PP
+for multiple settings.
+Similarly for any other application token (as passed to init_snmp()).
 .SH COMMENTS
 .PP
 Any lines beginning with the character '#' in the configuration files
@@ -149,14 +179,28 @@ during normal configuration file processing.:
 .RS
 .nf
 # include site specific config
-include site.conf
+includeFile site.conf
 .RE
 .PP
-This will search every directory in the configuration path for files
-named site.conf, and will process those files before returning to the
-processing of the original file. Note that if '.conf' is omitted,
-it will be appended. That is, all configuration files must end
-in '.conf'.
+This will load the specified configuration file. The
+path to file must be either absolute, starting with '/',
+or relative. The relative path is then relative to the directory
+where the parent file with 'includeFile' directive resides.
+.PP
+The included file name does not need to have '.conf' suffix.
+.PP
+.RS
+.nf
+# include a all *.conf files in a directory
+includeDir /etc/snmp/config.d
+.RE
+.PP
+This will search specified directory for all files with '.conf'
+suffix and process them as if they were included using includeFile
+directive. The configuration files are not processed in any particular
+order.
+.PP
+The specified directory must be absolute directory path.
 .SH "API INTERFACE"
 .PP
 Information about writing C code that makes use of this system in

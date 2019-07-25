@@ -177,10 +177,11 @@ void           *
 netSnmpHostsTable_create_data_context(netsnmp_variable_list * index_data)
 {
     my_data_info *datactx = SNMP_MALLOC_TYPEDEF(my_data_info);
+
     if (!datactx)
         return NULL;
-    strncpy(datactx->hostname, index_data->val.string,
-            strlen(index_data->val.string));
+    strlcpy(datactx->hostname, (const char *) index_data->val.string,
+            sizeof(datactx->hostname));
     return datactx;
 }
 
@@ -224,8 +225,10 @@ netSnmpHostsTable_commit_row(void **my_data_context, int new_or_del)
     if ((out = fopen(HOSTS_FILE ".snmp", "w")) == NULL)
         return SNMP_ERR_COMMITFAILED;
     
-    if ((in = fopen(HOSTS_FILE, "r")) == NULL)
+    if ((in = fopen(HOSTS_FILE, "r")) == NULL) {
+        fclose(out);
         return SNMP_ERR_COMMITFAILED;
+    }
 
     while(fgets(line, sizeof(line), in)) {
         copy_nword(line,myaddr,sizeof(myaddr));

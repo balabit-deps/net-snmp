@@ -22,6 +22,7 @@
  * This should always be included first before anything else 
  */
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #if HAVE_STDLIB_H
 #include <stdlib.h>
 #endif
@@ -34,6 +35,9 @@
 #include <limits.h>
 #endif
 
+#ifndef NETSNMP_NO_WRITE_SUPPORT
+netsnmp_feature_require(header_complex_find_entry)
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
 
 /*
  * minimal include directives 
@@ -95,12 +99,6 @@ struct variable2 expObjectTable_variables[] = {
 };
 
 
-/*
- * global storage of our data, saved in and configured by header_complex() 
- */
-extern struct header_complex_index *expExpressionTableStorage;
-extern struct header_complex_index *expValueTableStorage;
-
 struct header_complex_index *expObjectTableStorage = NULL;
 
 /*
@@ -152,9 +150,8 @@ create_expObjectTable_data(void)
 
     StorageNew->expObjectIDWildcard = EXPOBJCETIDWILDCARD_FALSE;
     StorageNew->expObjectSampleType = EXPOBJCETSAMPLETYPE_ABSOLUTEVALUE;
-    memdup((unsigned char **)
-           &(StorageNew->expObjectDeltaDiscontinuityID),
-           (unsigned char *) TimeInstance, sizeof(TimeInstance));
+    StorageNew->expObjectDeltaDiscontinuityID =
+        netsnmp_memdup(TimeInstance, sizeof(TimeInstance));
     StorageNew->expObjectDeltaDiscontinuityIDLen =
         sizeof(TimeInstance) / sizeof(oid);
 
@@ -217,7 +214,6 @@ void
 parse_expObjectTable(const char *token, char *line)
 {
     size_t          tmpint;
-    oid            *tmpoid = NULL;
     struct expObjectTable_data *StorageTmp =
         SNMP_MALLOC_STRUCT(expObjectTable_data);
 
@@ -404,6 +400,7 @@ store_expObjectTable(int majorID, int minorID, void *serverarg,
         }
     }
     DEBUGMSGTL(("expObjectTable", "storage done\n"));
+    return 0;
 }
 
 
@@ -548,8 +545,7 @@ write_expObjectID(int action,
          */
         tmpvar = StorageTmp->expObjectID;
         tmplen = StorageTmp->expObjectIDLen;
-        memdup((u_char **) & StorageTmp->expObjectID, var_val,
-               var_val_len);
+        StorageTmp->expObjectID = netsnmp_memdup(var_val, var_val_len);
         StorageTmp->expObjectIDLen = var_val_len / sizeof(oid);
         break;
 
@@ -807,8 +803,8 @@ write_expObjectDeltaDiscontinuityID(int action,
          */
         tmpvar = StorageTmp->expObjectDeltaDiscontinuityID;
         tmplen = StorageTmp->expObjectDeltaDiscontinuityIDLen;
-        memdup((u_char **) & StorageTmp->expObjectDeltaDiscontinuityID,
-               var_val, var_val_len);
+        StorageTmp->expObjectDeltaDiscontinuityID =
+            netsnmp_memdup(var_val, var_val_len);
         StorageTmp->expObjectDeltaDiscontinuityIDLen =
             var_val_len / sizeof(oid);
         break;
@@ -1071,8 +1067,7 @@ write_expObjectConditional(int action,
          */
         tmpvar = StorageTmp->expObjectConditional;
         tmplen = StorageTmp->expObjectConditionalLen;
-        memdup((u_char **) & StorageTmp->expObjectConditional, var_val,
-               var_val_len);
+        StorageTmp->expObjectConditional = netsnmp_memdup(var_val, var_val_len);
         StorageTmp->expObjectConditionalLen = var_val_len / sizeof(oid);
         break;
 
@@ -1373,7 +1368,7 @@ write_expObjectEntryStatus(int action,
          */
 
 
-        if (StorageTmp == NULL) {
+        if (StorageTmp == NULL && set_value != RS_DESTROY) {
             /*
              * row creation, so add it 
              */
@@ -1382,7 +1377,7 @@ write_expObjectEntryStatus(int action,
             /*
              * XXX: ack, and if it is NULL? 
              */
-        } else if (set_value != RS_DESTROY) {
+        } else if (StorageTmp != NULL && set_value != RS_DESTROY) {
             /*
              * set the flag? 
              */

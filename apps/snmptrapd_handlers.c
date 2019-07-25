@@ -1,4 +1,5 @@
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 
 #if HAVE_STDLIB_H
 #include <stdlib.h>
@@ -36,6 +37,8 @@
 #include "snmptrapd_auth.h"
 #include "snmptrapd_log.h"
 #include "notification-log-mib/notification_log.h"
+
+netsnmp_feature_child_of(add_default_traphandler, snmptrapd)
 
 char *syslog_format1 = NULL;
 char *syslog_format2 = NULL;
@@ -97,8 +100,13 @@ snmptrapd_parse_traphandle(const char *token, char *line)
         format = strdup( buf );
         cptr = copy_nword(cptr, buf, sizeof(buf));
     }
-    DEBUGMSGTL(("read_config:traphandle", "registering handler for: "));
+    if ( !cptr ) {
+        netsnmp_config_error("Missing traphandle command (%s)", buf);
+        free(format);
+        return;
+    }
 
+    DEBUGMSGTL(("read_config:traphandle", "registering handler for: "));
     if (!strcmp(buf, "default")) {
         DEBUGMSG(("read_config:traphandle", "default"));
         traph = netsnmp_add_global_traphandler(NETSNMPTRAPD_DEFAULT_HANDLER,
@@ -119,6 +127,7 @@ snmptrapd_parse_traphandle(const char *token, char *line)
         if (!read_objid(buf, obuf, &olen)) {
 	    netsnmp_config_error("Bad trap OID in traphandle directive: %s",
 				 buf);
+            free(format);
             return;
         }
         DEBUGMSGOID(("read_config:traphandle", obuf, olen));
@@ -131,9 +140,12 @@ snmptrapd_parse_traphandle(const char *token, char *line)
         traph->flags = flags;
         traph->authtypes = TRAP_AUTH_EXE;
         traph->token = strdup(cptr);
-        if (format)
+        if (format) {
             traph->format = format;
+            format = NULL;
+        }
     }
+    free(format);
 }
 
 
@@ -182,6 +194,7 @@ parse_forward(const char *token, char *line)
 
         if (!read_objid(buf, obuf, &olen)) {
 	    netsnmp_config_error("Bad trap OID in forward directive: %s", buf);
+            free(format);
             return;
         }
         DEBUGMSGOID(("read_config:forward", obuf, olen));
@@ -199,6 +212,8 @@ parse_forward(const char *token, char *line)
         traph->token = strdup(cptr);
         if (format)
             traph->format = format;
+    } else {
+        free(format);
     }
 }
 
@@ -396,6 +411,7 @@ netsnmp_add_global_traphandler(int list, Netsnmp_Trap_Handler *handler)
     return traph;
 }
 
+#ifndef NETSNMP_FEATURE_REMOVE_ADD_DEFAULT_TRAPHANDLER
 /*
  * Register a new "default" traphandler, to be applied to all
  * traps with no specific trap handlers of their own.
@@ -405,6 +421,7 @@ netsnmp_add_default_traphandler(Netsnmp_Trap_Handler *handler) {
     return netsnmp_add_global_traphandler(NETSNMPTRAPD_DEFAULT_HANDLER,
                                           handler);
 }
+#endif /* NETSNMP_FEATURE_REMOVE_ADD_DEFAULT_TRAPHANDLER */
 
 
 /*
@@ -798,8 +815,10 @@ int   command_handler( netsnmp_pdu           *pdu,
 	    v2_pdu = convert_v1pdu_to_v2(pdu);
 	else
 	    v2_pdu = pdu;
-        oldquick = snmp_get_quick_print();
-        snmp_set_quick_print(1);
+        oldquick = netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID, 
+                                          NETSNMP_DS_LIB_QUICK_PRINT);
+        netsnmp_ds_set_boolean(NETSNMP_DS_LIBRARY_ID, 
+                               NETSNMP_DS_LIB_QUICK_PRINT, 1);
 
         /*
 	 * Format the trap and pass this string to the external command
@@ -838,7 +857,8 @@ int   command_handler( netsnmp_pdu           *pdu,
          *  and pass this formatted string to the command specified
          */
         run_shell_command(handler->token, (char*)rbuf, NULL, NULL);   /* Not interested in output */
-        snmp_set_quick_print(oldquick);
+        netsnmp_ds_set_boolean(NETSNMP_DS_LIBRARY_ID, 
+                               NETSNMP_DS_LIB_QUICK_PRINT, oldquick);
         if (pdu->command == SNMP_MSG_TRAP)
             snmp_free_pdu(v2_pdu);
         free(rbuf);
@@ -897,9 +917,12 @@ int   forward_handler( netsnmp_pdu           *pdu,
         pdu2->transport_data        = NULL;
         pdu2->transport_data_length = 0;
     }
-    if (!snmp_send( ss, pdu2 )) {
-	snmp_sess_perror("Forward failed", ss);
-	snmp_free_pdu(pdu2);
+
+    ss->s_snmp_errno = SNMPERR_SUCCESS;
+    if (!snmp_send( ss, pdu2 ) &&
+            ss->s_snmp_errno != SNMPERR_SUCCESS) {
+        snmp_sess_perror("Forward failed", ss);
+        snmp_free_pdu(pdu2);
     }
     snmp_close( ss );
     return NETSNMPTRAPD_HANDLER_OK;

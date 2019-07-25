@@ -7,12 +7,14 @@
  * distributed with the Net-SNMP package.
  */
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
 #include <net-snmp/library/container.h>
 #include <net-snmp/library/dir_utils.h>
 #include <net-snmp/library/snmp_debug.h>
 #include <net-snmp/data_access/swinst.h>
+#include "swinst_private.h"
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -25,6 +27,9 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <ApplicationServices/ApplicationServices.h>
+
+netsnmp_feature_require(container_directory)
+netsnmp_feature_require(date_n_time)
 
 /* ---------------------------------------------------------------------
  */
@@ -125,7 +130,8 @@ netsnmp_swinst_arch_load( netsnmp_container *container, u_int flags )
     return 0;
 }
 
-void  _dump_flags(u_long flags)
+static void
+_dump_flags(u_long flags)
 {
     static struct {
         const char*name;
@@ -251,6 +257,8 @@ _add_applications_in_dir(netsnmp_container *container, const char* path)
             rc = -1;
             SNMP_CFRelease(prodName);
             SNMP_CFRelease(version);
+            CFRelease(currentPath);
+            CFRelease(currentURL);
             break;
         }
 
@@ -281,7 +289,7 @@ _add_applications_in_dir(netsnmp_container *container, const char* path)
     return rc;
 }
 
-int
+static int
 _check_bundled_app(CFURLRef currentURL, CFStringRef *prodName,
                    CFStringRef *version, const char* file)
 {

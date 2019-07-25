@@ -29,6 +29,10 @@
 #include <net-snmp/library/container.h>
 #include <net-snmp/library/snmp_debug.h>
 #include <net-snmp/data_access/swrun.h>
+#include "swrun_private.h"
+
+static long pagesize;
+static long sc_clk_tck;
 
 /* ---------------------------------------------------------------------
  */
@@ -39,6 +43,8 @@ netsnmp_arch_swrun_init(void)
     extern int _swrun_max = NR_TASKS;   /* from <linux/tasks.h> */
 #endif
     
+    pagesize = getpagesize();
+    sc_clk_tck = sysconf(_SC_CLK_TCK);
     return;
 }
 
@@ -50,8 +56,9 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
     DIR                 *procdir = NULL;
     struct dirent       *procentry_p;
     FILE                *fp;
-    int                  pid, rc, i;
-    char                 buf[BUFSIZ], buf2[BUFSIZ], *cp;
+    int                  pid, i;
+    unsigned long long   cpu;
+    char                 buf[BUFSIZ], buf2[BUFSIZ], *cp, *cp1;
     netsnmp_swrun_entry *entry;
     
     procdir = opendir("/proc");
@@ -82,11 +89,14 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
          */
         snprintf( buf2, BUFSIZ, "/proc/%d/status", pid );
         fp = fopen( buf2, "r" );
-        if (!fp)
+        if (!fp) {
+            netsnmp_swrun_entry_free(entry);
             continue; /* file (process) probably went away */
+	}
         memset(buf, 0, sizeof(buf));
         if (fgets( buf, BUFSIZ-1, fp ) == NULL) {
             fclose(fp);
+            netsnmp_swrun_entry_free(entry);
             continue;
         }
         fclose(fp);
@@ -108,16 +118,15 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
          */
         snprintf( buf2, BUFSIZ, "/proc/%d/cmdline", pid );
         fp = fopen( buf2, "r" );
-        if (!fp)
+        if (!fp) {
+            netsnmp_swrun_entry_free(entry);
             continue; /* file (process) probably went away */
-        memset(buf, 0, sizeof(buf));
-        if ((cp = fgets( buf, BUFSIZ-1, fp )) == NULL) {
-            fclose(fp);
-            continue;
         }
+        entry->hrSWRunType = HRSWRUNTYPE_APPLICATION;
+        memset(buf, 0, sizeof(buf));
+        cp = fgets( buf, BUFSIZ-1, fp );
         fclose(fp);
-
-        if ( cp ) {
+        if (cp != NULL) {
             /*
              *     argv[0]   is hrSWRunPath
              */ 
@@ -139,25 +148,24 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
                           (int)sizeof(entry->hrSWRunParameters) - 1,
                           buf + entry->hrSWRunPath_len + 1);
         } else {
-            memcpy(entry->hrSWRunPath, entry->hrSWRunName, entry->hrSWRunName_len);
-            entry->hrSWRunPath_len       = entry->hrSWRunName_len;
+            /* empty /proc/PID/cmdline, it's probably a kernel thread */
+            entry->hrSWRunPath_len = 0;
             entry->hrSWRunParameters_len = 0;
+            entry->hrSWRunType = HRSWRUNTYPE_OPERATINGSYSTEM;
         }
- 
-        /*
-         * XXX - No information regarding system processes vs applications
-         */
-        entry->hrSWRunType = HRSWRUNTYPE_APPLICATION;
 
         /*
          *   {xxx} {xxx} STATUS  {xxx}*10  UTIME STIME  {xxx}*8 RSS
          */
         snprintf( buf, BUFSIZ, "/proc/%d/stat", pid );
         fp = fopen( buf, "r" );
-        if (!fp)
+        if (!fp) {
+            netsnmp_swrun_entry_free(entry);
             continue; /* file (process) probably went away */
+	}
         if (fgets( buf, BUFSIZ-1, fp ) == NULL) {
             fclose(fp);
+            netsnmp_swrun_entry_free(entry);
             continue;
         }
         fclose(fp);
@@ -165,8 +173,12 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
         cp = buf;
         while ( ' ' != *(cp++))    /* Skip first field */
             ;
-        while ( ' ' != *(cp++))    /* Skip second field */
-            ;
+        cp1 = cp;                  /* Skip second field */
+        while (*cp1) {
+            if (*cp1 == ')') cp = cp1;
+            cp1++;
+        }
+        cp += 2;
         
         switch (*cp) {
         case 'R':  entry->hrSWRunStatus = HRSWRUNSTATUS_RUNNING;
@@ -180,25 +192,25 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
         default:   entry->hrSWRunStatus = HRSWRUNSTATUS_INVALID;
                    break;
         }
-        for (i=10; i; i--) {   /* Skip STATUS + 10 fields */
-            while (' ' != *(cp++))
+        for (i=11; i; i--) {   /* Skip STATUS + 10 fields */
+            while (' ' != *(++cp))
                 ;
             cp++;
         }
-        entry->hrSWRunPerfCPU  = atoi( cp );   /*  utime */
-        while ( ' ' != *(cp++))
+        cpu  = atol( cp );                     /*  utime */
+        while ( ' ' != *(++cp))
             ;
-        cp++;				   /* Skip utime */
-        entry->hrSWRunPerfCPU += atoi( cp );   /* +stime */
+        cpu += atol( cp );                     /* +stime */
+        entry->hrSWRunPerfCPU  = cpu * 100 / sc_clk_tck;
 
-        for (i=8; i; i--) {   /* Skip stime + 8 fields */
-            while (' ' != *(cp++))
+        for (i=9; i; i--) {   /* Skip stime + 8 fields */
+            while (' ' != *(++cp))
                 ;
             cp++;
         }
-        entry->hrSWRunPerfMem  = atoi( cp );   /*  rss */
-        entry->hrSWRunPerfMem *= (getpagesize()/1024);  /* in kB */
-        rc = CONTAINER_INSERT(container, entry);
+        entry->hrSWRunPerfMem  = atol( cp );       /* rss   */
+        entry->hrSWRunPerfMem *= (pagesize/1024);  /* in kB */
+        CONTAINER_INSERT(container, entry);
     }
     closedir( procdir );
 

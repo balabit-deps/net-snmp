@@ -10,6 +10,7 @@
 #include <net-snmp/data_access/defaultrouter.h>
 
 #include "ip-mib/ipDefaultRouterTable/ipDefaultRouterTable.h"
+#include "defaultrouter_private.h"
 
 #include <asm/types.h>
 #ifdef HAVE_LINUX_RTNETLINK_H
@@ -93,9 +94,17 @@ _load(netsnmp_container *container)
     netsnmp_defaultrouter_entry *entry;
     int nlsk;
     struct sockaddr_nl addr;
-    unsigned char rcvbuf[RCVBUF_SIZE];
     int rcvbuf_size = RCVBUF_SIZE;
-    unsigned char sndbuf[SNDBUF_SIZE];
+    union {
+        struct nlmsghdr hdr;
+        unsigned char rcvbuf[RCVBUF_SIZE];
+    } rcvbuf_union;
+    union {
+        struct nlmsghdr hdr;
+        unsigned char sndbuf[SNDBUF_SIZE];
+    } sndbuf_union;
+    unsigned char *const rcvbuf = rcvbuf_union.rcvbuf;
+    unsigned char *const sndbuf = sndbuf_union.sndbuf;
     struct nlmsghdr *hdr;
     struct rtmsg *rthdr;
     int count;
@@ -126,7 +135,7 @@ _load(netsnmp_container *container)
     addr.nl_family = AF_NETLINK;
 
     memset(sndbuf, '\0', SNDBUF_SIZE);
-    hdr = (struct nlmsghdr *)sndbuf;
+    hdr = &sndbuf_union.hdr;
     hdr->nlmsg_type = RTM_GETROUTE;
     hdr->nlmsg_pid = getpid();
     hdr->nlmsg_seq = 0;
@@ -176,7 +185,7 @@ _load(netsnmp_container *container)
         /*
          * Walk all of the returned messages
          */
-        nlmhp = (struct nlmsghdr *)rcvbuf;
+        nlmhp = &rcvbuf_union.hdr;
         while (NLMSG_OK(nlmhp, count)) {
             u_char addresstype;
             char   address[NETSNMP_ACCESS_DEFAULTROUTER_BUF_SIZE + 1];
@@ -262,6 +271,11 @@ _load(netsnmp_container *container)
 
                 rtap = RTA_NEXT(rtap, rtcount);
             } /* while RTA_OK(rtap) */
+
+	    /* clip the calculated lifetime if necessary */
+	    if (lifetime > IPDEFAULTROUTERLIFETIME_MAX) {
+		lifetime = IPDEFAULTROUTERLIFETIME_MAX;
+	    }
 
             if (address_len != 0 && if_index != -1 &&
                 lifetime != 0 && preference != -3 ) {

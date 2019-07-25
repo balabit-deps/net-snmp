@@ -1,10 +1,23 @@
 /*
  * netsnmp_data_list.c
  *
- * $Id: data_list.c 19639 2010-11-07 21:14:21Z magfr $
+ * Portions of this file are subject to the following copyright(s).  See
+ * the Net-SNMP's COPYING file for more details and other copyrights
+ * that may apply:
+ *
+ * Portions of this file are copyrighted by:
+ * Copyright (c) 2016 VMware, Inc. All rights reserved.
+ * Use is subject to license terms specified in the COPYING file
+ * distributed with the Net-SNMP package.
  */
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #include <net-snmp/net-snmp-includes.h>
+
+netsnmp_feature_child_of(data_list_all, libnetsnmp)
+
+netsnmp_feature_child_of(data_list_add_data, data_list_all)
+netsnmp_feature_child_of(data_list_get_list_node, data_list_all)
 
 /** @defgroup data_list generic linked-list data handling with a string as a key.
  * @ingroup library
@@ -62,8 +75,8 @@ netsnmp_create_data_list(const char *name, void *data,
         return NULL;
     node->name = strdup(name);
     if (!node->name) {
-      free(node);
-      return NULL;
+        free(node);
+        return NULL;
     }
     node->data = data;
     node->free_func = beer;
@@ -81,6 +94,9 @@ netsnmp_data_list_add_node(netsnmp_data_list **head, netsnmp_data_list *node)
 
     netsnmp_assert(NULL != head);
     netsnmp_assert(NULL != node);
+    if (!head || !node)
+        return;
+
     netsnmp_assert(NULL != node->name);
 
     DEBUGMSGTL(("data_list","adding key '%s'\n", node->name));
@@ -131,6 +147,7 @@ netsnmp_add_list_data(netsnmp_data_list **head, netsnmp_data_list *node)
  * @param beer A function that can free the data pointer (in the future)
  * @return a newly created data_list node which was inserted in the list
  */
+#ifndef NETSNMP_FEATURE_REMOVE_DATA_LIST_ADD_DATA
 NETSNMP_INLINE netsnmp_data_list *
 netsnmp_data_list_add_data(netsnmp_data_list **head, const char *name,
                            void *data, Netsnmp_Free_List_Data * beer)
@@ -150,6 +167,7 @@ netsnmp_data_list_add_data(netsnmp_data_list **head, const char *name,
 
     return node;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_DATA_LIST_ADD_DATA */
 
 /** returns a data_list node's data for a given name within a data_list
  * @param head the head node of a data_list
@@ -174,6 +192,7 @@ netsnmp_get_list_data(netsnmp_data_list *head, const char *name)
  * @param name the name to find
  * @return a pointer to the data_list node
  */
+#ifndef NETSNMP_FEATURE_REMOVE_DATA_LIST_GET_LIST_NODE
 NETSNMP_INLINE netsnmp_data_list    *
 netsnmp_get_list_node(netsnmp_data_list *head, const char *name)
 {
@@ -186,6 +205,7 @@ netsnmp_get_list_node(netsnmp_data_list *head, const char *name)
         return head;
     return NULL;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_DATA_LIST_GET_LIST_NODE */
 
 /** Removes a named node from a data_list (and frees it)
  * @param realhead a pointer to the head node of a data_list
@@ -230,9 +250,14 @@ netsnmp_register_save_list(netsnmp_data_list **datalist,
                            const char *type, const char *token,
                            Netsnmp_Save_List_Data *data_list_save_ptr,
                            Netsnmp_Read_List_Data *data_list_read_ptr,
-                           Netsnmp_Free_List_Data *data_list_free_ptr) {
-    netsnmp_data_list_saveinfo *info =
-        SNMP_MALLOC_TYPEDEF(netsnmp_data_list_saveinfo);
+                           Netsnmp_Free_List_Data *data_list_free_ptr)
+{
+    netsnmp_data_list_saveinfo *info;
+
+    if (!data_list_save_ptr && !data_list_read_ptr)
+        return;
+
+    info = SNMP_MALLOC_TYPEDEF(netsnmp_data_list_saveinfo);
 
     if (!info) {
         snmp_log(LOG_ERR, "couldn't malloc a netsnmp_data_list_saveinfo typedef");
@@ -364,5 +389,12 @@ netsnmp_read_data_callback(const char *token, char *line) {
 
     return;
 }
+
+void
+shutdown_data_list(void)
+{
+    netsnmp_free_all_list_data(saveHead);
+}
+
 /**  @} */
 

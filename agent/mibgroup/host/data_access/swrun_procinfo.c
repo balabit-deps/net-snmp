@@ -23,6 +23,7 @@
 #include <net-snmp/library/container.h>
 #include <net-snmp/library/snmp_debug.h>
 #include <net-snmp/data_access/swrun.h>
+#include "swrun_private.h"
 
 int avail = 1024;    /* Size of table to allocate */
 
@@ -42,8 +43,8 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
 {
     struct procsinfo    *proc_table;
     pid_t                proc_index = 0;
-    int                  nprocs, rc, i;
-    char                *cp1, *cp2;
+    int                  nprocs, i;
+    char                 pentry[128], *ppentry, fullpath[128];
     netsnmp_swrun_entry *entry;
 
     /*
@@ -67,33 +68,33 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
         entry = netsnmp_swrun_entry_create(proc_table[i].pi_pid);
         if (NULL == entry)
             continue;   /* error already logged by function */
-        rc = CONTAINER_INSERT(container, entry);
+        CONTAINER_INSERT(container, entry);
 
-        /*
-         *  Split pi_comm into two:
-         *     argv[0]   is hrSWRunPath
-         *     argv[1..] is hrSWRunParameters
-         */
-        for ( cp1 = proc_table[i].pi_comm; ' ' == *cp1; cp1++ )
-            ;
-        *cp1 = '\0';    /* End of argv[0] */
-        entry->hrSWRunPath_len = snprintf(entry->hrSWRunPath,
-                                   sizeof(entry->hrSWRunPath)-1,
-                                          "%s", proc_table[i].pi_comm);
-        /*
-         * Set hrSWRunName to be the last component of hrSWRunPath
-         */
-        cp2  = strrchr( entry->hrSWRunPath, '/' );
-        if (cp2) 
-            cp2++;           /* Find the final component ... */
-        else
-            cp2 = entry->hrSWRunPath;          /* ... if any */
-        entry->hrSWRunName_len = snprintf(entry->hrSWRunName,
-                                   sizeof(entry->hrSWRunName)-1, "%s", cp2);
+	memset(pentry, 0, sizeof(pentry));								/* Empty each time */
+	if(!(SKPROC & proc_table[i].pi_flags)) {							/* Remove kernel processes */
+		getargs(&proc_table[i], sizeof(struct procsinfo), pentry, sizeof(pentry));              /* Call getargs() */
+		for(ppentry = pentry; !((*ppentry == '\0') && (*(ppentry+1) == '\0')); ppentry++) {     /* Process until 0x00 0x00 */
+			if((*ppentry == '\0') && (!(*(ppentry+1) == '\0')))                             /* if 0x00 !0x00 */
+				*ppentry = ' ';                                                         /* change to 0x20 !0x00 */
+		}
+		snprintf(fullpath, sizeof(fullpath)-1, "%.*s", (int)(strchr(pentry, ' ')-pentry), pentry);
 
-        entry->hrSWRunParameters_len = snprintf(entry->hrSWRunParameters,
-                                         sizeof(entry->hrSWRunParameters)-1,
-                                          "%s", cp1+1);
+		entry->hrSWRunPath_len = snprintf(entry->hrSWRunPath,
+			sizeof(entry->hrSWRunPath), "%s", fullpath);
+		ppentry = strrchr(fullpath, '/');
+		if(ppentry == NULL) {
+			entry->hrSWRunName_len = snprintf(entry->hrSWRunName,
+				sizeof(entry->hrSWRunName), "%s", fullpath);
+		}
+		else {
+			entry->hrSWRunName_len = snprintf(entry->hrSWRunName,
+				sizeof(entry->hrSWRunName), "%s", ppentry + 1);
+		}
+
+		ppentry = strchr(pentry, ' ');
+		entry->hrSWRunParameters_len = snprintf(entry->hrSWRunParameters,
+			sizeof(entry->hrSWRunParameters), "%.*s", (int)(pentry - ppentry), ppentry + 1);
+	}
 
         entry->hrSWRunType = (SKPROC & proc_table[i].pi_flags)
                               ? 2   /* kernel process */
@@ -124,7 +125,7 @@ netsnmp_arch_swrun_container_load( netsnmp_container *container, u_int flags)
     free(proc_table);
 
     DEBUGMSGTL(("swrun:load:arch"," loaded %d entries\n",
-                CONTAINER_SIZE(container)));
+                (int) CONTAINER_SIZE(container)));
 
     return 0;
 }

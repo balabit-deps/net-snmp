@@ -8,6 +8,10 @@
  *    If new ds_agent entries are added to this header file,
  *    then remember to run 'perl/agent/default_store/gen' to
  *    update the corresponding perl interface.
+ *
+ * Portions of this file are copyrighted by:
+ * Copyright (c) 2016 VMware, Inc. All rights reserved.
+ * Use is subject to license terms specified in the COPYING file
  */
 
 /*
@@ -27,10 +31,18 @@
 #define NETSNMP_DS_AGENT_DONT_LOG_TCPWRAPPERS_CONNECTS 12   /* 1 = disable logging */
 #define NETSNMP_DS_APP_DONT_LOG         NETSNMP_DS_AGENT_DONT_RETAIN_NOTIFICATIONS /* compat */
 #define NETSNMP_DS_AGENT_SKIPNFSINHOSTRESOURCES    13   /* 1 = don't store NFS entries in hrStorageTable */
+#define NETSNMP_DS_AGENT_REALSTORAGEUNITS 14    /* 1 = use real allocation units in hrStorageTable, 0 = recalculate it to fit 32bits */
 
-/* WARNING: The trap receiver uses DS flags and must not conflict with
-   these!  If you use a value above 15, change the minimimum DS bool
-   value in snmptrapd_log.h */
+   /* Repeated from "apps/snmptrapd_ds.h" */
+#define NETSNMP_DS_APP_NUMERIC_IP       16
+#define NETSNMP_DS_APP_NO_AUTHORIZATION 17
+
+#define NETSNMP_DS_AGENT_DISKIO_NO_FD   18      /* 1 = don't report /dev/fd*   entries in diskIOTable */
+#define NETSNMP_DS_AGENT_DISKIO_NO_LOOP 19      /* 1 = don't report /dev/loop* entries in diskIOTable */
+#define NETSNMP_DS_AGENT_DISKIO_NO_RAM  20      /* 1 = don't report /dev/ram*  entries in diskIOTable */
+
+/* WARNING: The trap receiver also uses DS flags and must not conflict with these!
+ * If you define additional boolean entries, check in "apps/snmptrapd_ds.h" first */
 
 /*
  * strings 
@@ -62,5 +74,7 @@
 #define NETSNMP_DS_AGENT_INTERNAL_SECLEVEL 12   /* used by internal queries */
 #define NETSNMP_DS_AGENT_MAX_GETBULKREPEATS 13 /* max getbulk repeats */
 #define NETSNMP_DS_AGENT_MAX_GETBULKRESPONSES 14   /* max getbulk respones */
-
+#define NETSNMP_DS_AGENT_AVG_BULKVARBINDSIZE 15 /* avg varbind size estimate */
+#define NETSNMP_DS_AGENT_PDU_STATS_MAX       16 /* size of top N array*/
+#define NETSNMP_DS_AGENT_PDU_STATS_THRESHOLD 17 /* minimum threshold time */
 #endif

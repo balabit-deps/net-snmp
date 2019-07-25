@@ -1,5 +1,6 @@
 /* include/net-snmp/net-snmp-config.h.in.  Generated from configure.ac by autoheader.  */
-/* 
+
+/*
  * net-snmp configuration header file
  *
  * NOTE: DO NOT EDIT include/net-snmp/net-snmp-config.h.in as your changes
@@ -15,6 +16,11 @@
  * Copyright © 2003 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms specified in the COPYING file
  * distributed with the Net-SNMP package.
+ *
+ * Portions of this file are copyrighted by:
+ * Copyright (c) 2016 VMware, Inc. All rights reserved.
+ * Use is subject to license terms specified in the COPYING file
+ * distributed with the Net-SNMP package.
  */
 
 #ifndef NET_SNMP_CONFIG_H
@@ -28,16 +34,11 @@
  */
 #ifndef NETSNMP_NO_AUTOCONF_DEFINITIONS
 
-
-#if defined (WIN32) || defined (mingw32) || defined (cygwin)
-#define ENV_SEPARATOR ";"
-#define ENV_SEPARATOR_CHAR ';'
-#else
-#define ENV_SEPARATOR ":"
-#define ENV_SEPARATOR_CHAR ':'
-#endif
-
 /* definitions added by configure on-the-fly */
+
+#define config_error(x)
+
+#define config_warning(x)
 
 #define config_belongs_in(x)
 
@@ -53,10 +54,6 @@
 
 #define config_parse_dot_conf(w,x,y,z)
 
-#define config_error(x)
-
-#define config_warning(x)
-
 /* Define if building universal (internal helper macro) */
 #undef AC_APPLE_UNIVERSAL_BUILD
 
@@ -70,6 +67,15 @@
 
 /* location of swap device */
 #undef DMEM_LOC
+
+/* Define if you want local DNSSEC validation support */
+#undef DNSSEC_LOCAL_VALIDATION
+
+/* Environment separator character surrounded by double quotes. */
+#undef ENV_SEPARATOR
+
+/* Environment separator character surrounded by single quotes. */
+#undef ENV_SEPARATOR_CHAR
 
 /* location of mount table list */
 #undef ETC_MNTTAB
@@ -93,17 +99,35 @@
 /* Define to 1 if you have the <asm/types.h> header file. */
 #undef HAVE_ASM_TYPES_H
 
+/* Define to 1 if you have the `ASN1_STRING_get0_data' function. */
+#undef HAVE_ASN1_STRING_GET0_DATA
+
+/* Define to 1 if you have the `asprintf' function. */
+#undef HAVE_ASPRINTF
+
 /* Define to 1 if you have the `cgetnext' function. */
 #undef HAVE_CGETNEXT
 
 /* Define to 1 if you have the `chown' function. */
 #undef HAVE_CHOWN
 
+/* Define to 1 if you have the `clock_gettime' library */
+#undef HAVE_CLOCK_GETTIME
+
 /* Define to 1 if you have the `closedir' function. */
 #undef HAVE_CLOSEDIR
 
+/* Define to 1 if you have the `closesocket' function. */
+#undef HAVE_CLOSESOCKET
+
+/* Define to 1 if you have the <com_err.h> header file. */
+#undef HAVE_COM_ERR_H
+
 /* Define to 1 if the system has the type `Counter64'. */
 #undef HAVE_COUNTER64
+
+/* Define to 1 if you have the <curses.h> header file. */
+#undef HAVE_CURSES_H
 
 /* Define to 1 if you have the declaration of `sensors_get_all_subfeatures',
    and to 0 if you don't. */
@@ -114,6 +138,15 @@
 
 /* define if you have devstat_getdevs() */
 #undef HAVE_DEVSTAT_GETDEVS
+
+/* Define to 1 if you have the `DH_get0_key' function. */
+#undef HAVE_DH_GET0_KEY
+
+/* Define to 1 if you have the `DH_get0_pqg' function. */
+#undef HAVE_DH_GET0_PQG
+
+/* Define to 1 if you have the `DH_set0_pqg' function. */
+#undef HAVE_DH_SET0_PQG
 
 /* Define to 1 if you have the <dirent.h> header file, and it defines `DIR'.
    */
@@ -131,11 +164,38 @@
 /* Set if the dpkg-query command is available */
 #undef HAVE_DPKG_QUERY
 
+/* Define to 1 if you have the `DTLSv1_method' function. */
+#undef HAVE_DTLSV1_METHOD
+
+/* Define to 1 if you have the `DTLS_method' function. */
+#undef HAVE_DTLS_METHOD
+
 /* Define to 1 if you have the <err.h> header file. */
 #undef HAVE_ERR_H
 
+/* Define to 1 if you have the <et/com_err.h> header file. */
+#undef HAVE_ET_COM_ERR_H
+
 /* Define to 1 if you have the `eval_pv' function. */
 #undef HAVE_EVAL_PV
+
+/* Define to 1 if you have the `EVP_MD_CTX_create' function. */
+#undef HAVE_EVP_MD_CTX_CREATE
+
+/* Define to 1 if you have the `EVP_MD_CTX_destroy' function. */
+#undef HAVE_EVP_MD_CTX_DESTROY
+
+/* Define to 1 if you have the `EVP_MD_CTX_free' function. */
+#undef HAVE_EVP_MD_CTX_FREE
+
+/* Define to 1 if you have the `EVP_MD_CTX_new' function. */
+#undef HAVE_EVP_MD_CTX_NEW
+
+/* Define if you have EVP_sha224/256 in openssl */
+#undef HAVE_EVP_SHA224
+
+/* Define if you have EVP_sha384/512 in openssl */
+#undef HAVE_EVP_SHA384
 
 /* Define to 1 if you have the `execv' function. */
 #undef HAVE_EXECV
@@ -143,11 +203,26 @@
 /* Define to 1 if you have the <fcntl.h> header file. */
 #undef HAVE_FCNTL_H
 
+/* Define to 1 if you have the `fgetc_unlocked' function. */
+#undef HAVE_FGETC_UNLOCKED
+
+/* Define to 1 if you have the `flockfile' function. */
+#undef HAVE_FLOCKFILE
+
 /* Define to 1 if you have the `fork' function. */
 #undef HAVE_FORK
 
+/* Define to 1 if you have the `forkall' function. */
+#undef HAVE_FORKALL
+
 /* Define to 1 if you have the <fstab.h> header file. */
 #undef HAVE_FSTAB_H
+
+/* Define to 1 if you have the `fsync' function. */
+#undef HAVE_FSYNC
+
+/* Define to 1 if you have the `funlockfile' function. */
+#undef HAVE_FUNLOCKFILE
 
 /* Define to 1 if you have the `gai_strerror' function. */
 #undef HAVE_GAI_STRERROR
@@ -167,8 +242,14 @@
 /* Define to 1 if you have the `getgrnam' function. */
 #undef HAVE_GETGRNAM
 
+/* Define to 1 if you have the `gethostbyaddr' function. */
+#undef HAVE_GETHOSTBYADDR
+
 /* Define to 1 if you have the `gethostbyname' function. */
 #undef HAVE_GETHOSTBYNAME
+
+/* Define to 1 if you have the `gethostbyname2' function. */
+#undef HAVE_GETHOSTBYNAME2
 
 /* Define to 1 if you have the `gethostname' function. */
 #undef HAVE_GETHOSTNAME
@@ -209,8 +290,14 @@
 /* Define to 1 if you have the `hasmntopt' function. */
 #undef HAVE_HASMNTOPT
 
+/* Define to 1 if you have the headerGet function. */
+#undef HAVE_HEADERGET
+
 /* Define to 1 if you have the `if_freenameindex' function. */
 #undef HAVE_IF_FREENAMEINDEX
+
+/* Define to 1 if you have the `if_indextoname' function. */
+#undef HAVE_IF_INDEXTONAME
 
 /* Define to 1 if you have the `if_nameindex' function. */
 #undef HAVE_IF_NAMEINDEX
@@ -257,11 +344,38 @@
 /* Define to 1 if you have the <iphlpapi.h> header file. */
 #undef HAVE_IPHLPAPI_H
 
+/* Set if IP_PKTINFO is usable */
+#undef HAVE_IP_PKTINFO
+
+/* Set if IP_RECVDSTADDR is usable */
+#undef HAVE_IP_RECVDSTADDR
+
+/* Define to 1 if you have the `kinfo_get_cpus' function. */
+#undef HAVE_KINFO_GET_CPUS
+
+/* Define if you have /dev/kmem */
+#undef HAVE_KMEM
+
 /* Define to 1 if you have the `knlist' function. */
 #undef HAVE_KNLIST
 
+/* Define to 1 if you have the `krb5_auth_con_getrecvsubkey' function. */
+#undef HAVE_KRB5_AUTH_CON_GETRECVSUBKEY
+
+/* Define to 1 if you have the `krb5_auth_con_getsendsubkey' function. */
+#undef HAVE_KRB5_AUTH_CON_GETSENDSUBKEY
+
 /* Define to 1 if you have the <kstat.h> header file. */
 #undef HAVE_KSTAT_H
+
+/* Define to 1 if you have the `kvm_getfile2' function. */
+#undef HAVE_KVM_GETFILE2
+
+/* Define to 1 if you have the `kvm_getfiles' function. */
+#undef HAVE_KVM_GETFILES
+
+/* Define to 1 if you have the `kvm_getproc2' function. */
+#undef HAVE_KVM_GETPROC2
 
 /* Define to 1 if you have the `kvm_getprocs' function. */
 #undef HAVE_KVM_GETPROCS
@@ -281,11 +395,11 @@
 /* Define to 1 if you have the `elf' library (-lelf). */
 #undef HAVE_LIBELF
 
-/* Define to 1 if you have the `kstat' library (-lkstat). */
-#undef HAVE_LIBKSTAT
-
 /* Define to 1 if you have the `mld' library (-lmld). */
 #undef HAVE_LIBMLD
+
+/* Define to 1 if <netlink/netlink.h> provides the libnl3 API */
+#undef HAVE_LIBNL3
 
 /* define if you have libnm */
 #undef HAVE_LIBNM
@@ -299,6 +413,12 @@
 /* Define to 1 if you have the `pkcs11' library (-lpkcs11). */
 #undef HAVE_LIBPKCS11
 
+/* define if you have BSD pkg-ng */
+#undef HAVE_LIBPKG
+
+/* Define to 1 if you have the `pthread' library (-lpthread). */
+#undef HAVE_LIBPTHREAD
+
 /* Define to 1 if you have the `rpm' library (-lrpm). */
 #undef HAVE_LIBRPM
 
@@ -307,6 +427,9 @@
 
 /* Define to 1 if you have the `rsaref' library (-lrsaref). */
 #undef HAVE_LIBRSAREF
+
+/* Define to 1 if you have the `sres' library (-lsres). */
+#undef HAVE_LIBSRES
 
 /* Define to 1 if you have the `ssh2' library (-lssh2). */
 #undef HAVE_LIBSSH2
@@ -323,8 +446,9 @@
 /* Define to 1 if you have the <linux/ethtool.h> header file. */
 #undef HAVE_LINUX_ETHTOOL_H
 
-/* Define to 1 if `speed_hi' is member of `struct ethtool_cmd'. */
-#undef HAVE_STRUCT_ETHTOOL_CMD_SPEED_HI
+/* Define if __u8 .. __u64 must be declared explicitly before including
+   <linux/ethtool.h> */
+#undef HAVE_LINUX_ETHTOOL_NEEDS_U64
 
 /* Define to 1 if you have the <linux/hdreg.h> header file. */
 #undef HAVE_LINUX_HDREG_H
@@ -337,6 +461,9 @@
 
 /* Define to 1 if you have the <linux/tasks.h> header file. */
 #undef HAVE_LINUX_TASKS_H
+
+/* Define if load_defaults() is available in libmysqlclient */
+#undef HAVE_LOAD_DEFAULTS
 
 /* Define to 1 if you have the <locale.h> header file. */
 #undef HAVE_LOCALE_H
@@ -386,11 +513,20 @@
 /* Define to 1 if you have the <mtab.h> header file. */
 #undef HAVE_MTAB_H
 
-/* Define to 1 if you have the <mysql/mysql.h> header file. */
-#undef HAVE_MYSQL_MYSQL_H
+/* Define if mysql_init() is available in libmysqlclient */
+#undef HAVE_MYSQL_INIT
+
+/* Define if MY_INIT() is availabe in libmysqlclient */
+#undef HAVE_MY_INIT
+
+/* Define if having my_load_defaults() */
+#undef HAVE_MY_LOAD_DEFAULTS
 
 /* Define to 1 if you have the <nbutil.h> header file. */
 #undef HAVE_NBUTIL_H
+
+/* Define to 1 if you have the <ncurses/curses.h> header file. */
+#undef HAVE_NCURSES_CURSES_H
 
 /* Define to 1 if you have the <ndir.h> header file, and it defines `DIR'. */
 #undef HAVE_NDIR_H
@@ -539,8 +675,17 @@
 /* Define to 1 if you have the <osreldate.h> header file. */
 #undef HAVE_OSRELDATE_H
 
+/* Define to 1 if you have the <pcap/pcap.h> header file. */
+#undef HAVE_PCAP_PCAP_H
+
+/* define if you have pci_lookup_name() */
+#undef HAVE_PCI_LOOKUP_NAME
+
 /* Define to 1 if you have the <pci/pci.h> header file. */
 #undef HAVE_PCI_PCI_H
+
+/* Define to 1 if you have <pcre.h>. */
+#undef HAVE_PCRE_H
 
 /* on aix, if you have perfstat */
 #undef HAVE_PERFSTAT
@@ -563,6 +708,9 @@
 /* Define to 1 if you have the <pkglocs.h> header file. */
 #undef HAVE_PKGLOCS_H
 
+/* Define to 1 if you have the <pkg.h> header file. */
+#undef HAVE_PKG_H
+
 /* Define to 1 if you have the `poll' function. */
 #undef HAVE_POLL
 
@@ -571,6 +719,9 @@
 
 /* Set if /etc/printcap exists */
 #undef HAVE_PRINTCAP
+
+/* Define if prioritynames variable is declared in <syslog.h> */
+#undef HAVE_PRIORITYNAMES
 
 /* Define to 1 if you have the <pthread.h> header file. */
 #undef HAVE_PTHREAD_H
@@ -599,14 +750,14 @@
 /* Define to 1 if you have the <rpm/header.h> header file. */
 #undef HAVE_RPM_HEADER_H
 
-/* Define to 1 if you have the <rpm/rpmdb.h> header file. */
-#undef HAVE_RPM_RPMDB_H
-
 /* Define to 1 if you have the <rpm/rpmfileutil.h> header file. */
 #undef HAVE_RPM_RPMFILEUTIL_H
 
 /* Define to 1 if you have the <rpm/rpmlib.h> header file. */
 #undef HAVE_RPM_RPMLIB_H
+
+/* Define to 1 if you have the <rpm/rpmts.h> header file. */
+#undef HAVE_RPM_RPMTS_H
 
 /* Define to 1 if you have the <search.h> header file. */
 #undef HAVE_SEARCH_H
@@ -680,8 +831,23 @@
 /* Define to 1 if the system has the type `socklen_t'. */
 #undef HAVE_SOCKLEN_T
 
+/* Define to 1 if you have the `srand' function. */
+#undef HAVE_SRAND
+
+/* Define to 1 if you have the `srand48' function. */
+#undef HAVE_SRAND48
+
+/* Define to 1 if you have the `srandom' function. */
+#undef HAVE_SRANDOM
+
 /* Define to 1 if the system has the type `ssize_t'. */
 #undef HAVE_SSIZE_T
+
+/* Define to 1 if you have the `SSL_library_init' function. */
+#undef HAVE_SSL_LIBRARY_INIT
+
+/* Define to 1 if you have the `SSL_load_error_strings' function. */
+#undef HAVE_SSL_LOAD_ERROR_STRINGS
 
 /* Define to 1 if you have the `statfs' function. */
 #undef HAVE_STATFS
@@ -713,6 +879,9 @@
 /* Define to 1 if you have the <string.h> header file. */
 #undef HAVE_STRING_H
 
+/* Define to 1 if you have the `strlcat' function. */
+#undef HAVE_STRLCAT
+
 /* Define to 1 if you have the `strlcpy' function. */
 #undef HAVE_STRLCPY
 
@@ -731,201 +900,219 @@
 /* Define to 1 if you have the `strtoull' function. */
 #undef HAVE_STRTOULL
 
-/* Define to 1 if `at_next' is member of `struct arphd'. */
+/* Define to 1 if `at_next' is a member of `struct arphd'. */
 #undef HAVE_STRUCT_ARPHD_AT_NEXT
 
-/* Define to 1 if `weak_key' is member of `struct des_ks_struct'. */
+/* Define to 1 if `weak_key' is a member of `struct des_ks_struct'. */
 #undef HAVE_STRUCT_DES_KS_STRUCT_WEAK_KEY
 
-/* Define to 1 if `d_type' is member of `struct dirent'. */
+/* Define to 1 if `d_type' is a member of `struct dirent'. */
 #undef HAVE_STRUCT_DIRENT_D_TYPE
 
-/* Define to 1 if `ifa_next' is member of `struct ifaddr'. */
+/* Define to 1 if `speed_hi' is a member of `struct ethtool_cmd'. */
+#undef HAVE_STRUCT_ETHTOOL_CMD_SPEED_HI
+
+/* Define to 1 if `ifa_next' is a member of `struct ifaddr'. */
 #undef HAVE_STRUCT_IFADDR_IFA_NEXT
 
-/* Define to 1 if `if_addrhead.tqh_first' is member of `struct ifnet'. */
+/* Define to 1 if `if_addrhead.tqh_first' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_ADDRHEAD_TQH_FIRST
 
-/* Define to 1 if `if_addrlist' is member of `struct ifnet'. */
+/* Define to 1 if `if_addrlist' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_ADDRLIST
 
-/* Define to 1 if `if_baudrate' is member of `struct ifnet'. */
+/* Define to 1 if `if_baudrate' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_BAUDRATE
 
-/* Define to 1 if `if_baudrate.ifs_value' is member of `struct ifnet'. */
+/* Define to 1 if `if_baudrate.ifs_value' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_BAUDRATE_IFS_VALUE
 
-/* Define to 1 if `if_ibytes' is member of `struct ifnet'. */
+/* Define to 1 if `if_ibytes' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_IBYTES
 
-/* Define to 1 if `if_imcasts' is member of `struct ifnet'. */
+/* Define to 1 if `if_imcasts' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_IMCASTS
 
-/* Define to 1 if `if_iqdrops' is member of `struct ifnet'. */
+/* Define to 1 if `if_iqdrops' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_IQDROPS
 
-/* Define to 1 if `if_lastchange.tv_sec' is member of `struct ifnet'. */
+/* Define to 1 if `if_lastchange.tv_nsec' is a member of `struct ifnet'. */
+#undef HAVE_STRUCT_IFNET_IF_LASTCHANGE_TV_NSEC
+
+/* Define to 1 if `if_lastchange.tv_sec' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_LASTCHANGE_TV_SEC
 
-/* Define to 1 if `if_mtu' is member of `struct ifnet'. */
+/* Define to 1 if `if_mtu' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_MTU
 
-/* Define to 1 if `if_noproto' is member of `struct ifnet'. */
+/* Define to 1 if `if_noproto' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_NOPROTO
 
-/* Define to 1 if `if_obytes' is member of `struct ifnet'. */
+/* Define to 1 if `if_obytes' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_OBYTES
 
-/* Define to 1 if `if_omcasts' is member of `struct ifnet'. */
+/* Define to 1 if `if_omcasts' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_OMCASTS
 
-/* Define to 1 if `if_speed' is member of `struct ifnet'. */
+/* Define to 1 if `if_speed' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_SPEED
 
-/* Define to 1 if `if_type' is member of `struct ifnet'. */
+/* Define to 1 if `if_type' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_TYPE
 
-/* Define to 1 if `if_xname' is member of `struct ifnet'. */
+/* Define to 1 if `if_xname' is a member of `struct ifnet'. */
 #undef HAVE_STRUCT_IFNET_IF_XNAME
 
-/* Define to 1 if `ips_cantforward' is member of `struct ipstat'. */
+/* Define to 1 if `ip6s_exthdrtoolong ' is a member of `struct ip6stat'. */
+#undef HAVE_STRUCT_IP6STAT_IP6S_EXTHDRTOOLONG_
+
+/* Define to 1 if `ips_cantforward' is a member of `struct ipstat'. */
 #undef HAVE_STRUCT_IPSTAT_IPS_CANTFORWARD
 
-/* Define to 1 if `ips_cantfrag' is member of `struct ipstat'. */
+/* Define to 1 if `ips_cantfrag' is a member of `struct ipstat'. */
 #undef HAVE_STRUCT_IPSTAT_IPS_CANTFRAG
 
-/* Define to 1 if `ips_delivered' is member of `struct ipstat'. */
+/* Define to 1 if `ips_delivered' is a member of `struct ipstat'. */
 #undef HAVE_STRUCT_IPSTAT_IPS_DELIVERED
 
-/* Define to 1 if `ips_fragdropped' is member of `struct ipstat'. */
+/* Define to 1 if `ips_fragdropped' is a member of `struct ipstat'. */
 #undef HAVE_STRUCT_IPSTAT_IPS_FRAGDROPPED
 
-/* Define to 1 if `ips_fragmented' is member of `struct ipstat'. */
+/* Define to 1 if `ips_fragmented' is a member of `struct ipstat'. */
 #undef HAVE_STRUCT_IPSTAT_IPS_FRAGMENTED
 
-/* Define to 1 if `ips_fragtimeout' is member of `struct ipstat'. */
+/* Define to 1 if `ips_fragtimeout' is a member of `struct ipstat'. */
 #undef HAVE_STRUCT_IPSTAT_IPS_FRAGTIMEOUT
 
-/* Define to 1 if `ips_localout' is member of `struct ipstat'. */
+/* Define to 1 if `ips_localout' is a member of `struct ipstat'. */
 #undef HAVE_STRUCT_IPSTAT_IPS_LOCALOUT
 
-/* Define to 1 if `ips_noproto' is member of `struct ipstat'. */
+/* Define to 1 if `ips_noproto' is a member of `struct ipstat'. */
 #undef HAVE_STRUCT_IPSTAT_IPS_NOPROTO
 
-/* Define to 1 if `ips_noroute' is member of `struct ipstat'. */
+/* Define to 1 if `ips_noroute' is a member of `struct ipstat'. */
 #undef HAVE_STRUCT_IPSTAT_IPS_NOROUTE
 
-/* Define to 1 if `ips_odropped' is member of `struct ipstat'. */
+/* Define to 1 if `ips_odropped' is a member of `struct ipstat'. */
 #undef HAVE_STRUCT_IPSTAT_IPS_ODROPPED
 
-/* Define to 1 if `ips_ofragments' is member of `struct ipstat'. */
+/* Define to 1 if `ips_ofragments' is a member of `struct ipstat'. */
 #undef HAVE_STRUCT_IPSTAT_IPS_OFRAGMENTS
 
-/* Define to 1 if `ips_reassembled' is member of `struct ipstat'. */
+/* Define to 1 if `ips_reassembled' is a member of `struct ipstat'. */
 #undef HAVE_STRUCT_IPSTAT_IPS_REASSEMBLED
 
-/* Define to 1 if `m_clfree' is member of `struct mbstat'. */
+/* Define to 1 if `m_clfree' is a member of `struct mbstat'. */
 #undef HAVE_STRUCT_MBSTAT_M_CLFREE
 
-/* Define to 1 if `m_clusters' is member of `struct mbstat'. */
+/* Define to 1 if `m_clusters' is a member of `struct mbstat'. */
 #undef HAVE_STRUCT_MBSTAT_M_CLUSTERS
 
-/* Define to 1 if `m_mbufs' is member of `struct mbstat'. */
+/* Define to 1 if `m_mbufs' is a member of `struct mbstat'. */
 #undef HAVE_STRUCT_MBSTAT_M_MBUFS
 
-/* Define to 1 if `n_value' is member of `struct nlist64'. */
+/* Define to 1 if `n_value' is a member of `struct nlist64'. */
 #undef HAVE_STRUCT_NLIST64_N_VALUE
 
-/* Define to 1 if `n_value' is member of `struct nlist'. */
+/* Define to 1 if `n_value' is a member of `struct nlist'. */
 #undef HAVE_STRUCT_NLIST_N_VALUE
 
-/* Define to 1 if `rt_dst' is member of `struct rtentry'. */
+/* Define to 1 if `rt_dst' is a member of `struct rtentry'. */
 #undef HAVE_STRUCT_RTENTRY_RT_DST
 
-/* Define to 1 if `rt_hash' is member of `struct rtentry'. */
+/* Define to 1 if `rt_hash' is a member of `struct rtentry'. */
 #undef HAVE_STRUCT_RTENTRY_RT_HASH
 
-/* Define to 1 if `rt_next' is member of `struct rtentry'. */
+/* Define to 1 if `rt_next' is a member of `struct rtentry'. */
 #undef HAVE_STRUCT_RTENTRY_RT_NEXT
 
-/* Define to 1 if `rt_refcnt' is member of `struct rtentry'. */
+/* Define to 1 if `rt_refcnt' is a member of `struct rtentry'. */
 #undef HAVE_STRUCT_RTENTRY_RT_REFCNT
 
-/* Define to 1 if `rt_unit' is member of `struct rtentry'. */
+/* Define to 1 if `rt_unit' is a member of `struct rtentry'. */
 #undef HAVE_STRUCT_RTENTRY_RT_UNIT
 
-/* Define to 1 if `rt_use' is member of `struct rtentry'. */
+/* Define to 1 if `rt_use' is a member of `struct rtentry'. */
 #undef HAVE_STRUCT_RTENTRY_RT_USE
 
-/* Define to 1 if `sa_sigaction' is member of `struct sigaction'. */
+/* Define to 1 if `sa_sigaction' is a member of `struct sigaction'. */
 #undef HAVE_STRUCT_SIGACTION_SA_SIGACTION
 
-/* Define to 1 if `sin6_scope_id' is member of `struct sockaddr_in6'. */
+/* Define to 1 if `sin6_scope_id' is a member of `struct sockaddr_in6'. */
 #undef HAVE_STRUCT_SOCKADDR_IN6_SIN6_SCOPE_ID
 
-/* Define to 1 if `sa_len' is member of `struct sockaddr'. */
+/* Define to 1 if `sa_len' is a member of `struct sockaddr'. */
 #undef HAVE_STRUCT_SOCKADDR_SA_LEN
 
-/* Define to 1 if `sa_union.sa_generic.sa_family2' is member of `struct
+/* Define to 1 if `sa_union.sa_generic.sa_family2' is a member of `struct
    sockaddr'. */
 #undef HAVE_STRUCT_SOCKADDR_SA_UNION_SA_GENERIC_SA_FAMILY2
 
-/* Define to 1 if `ss_family' is member of `struct sockaddr_storage'. */
+/* Define to 1 if `ss_family' is a member of `struct sockaddr_storage'. */
 #undef HAVE_STRUCT_SOCKADDR_STORAGE_SS_FAMILY
 
-/* Define to 1 if `__ss_family' is member of `struct sockaddr_storage'. */
+/* Define to 1 if `__ss_family' is a member of `struct sockaddr_storage'. */
 #undef HAVE_STRUCT_SOCKADDR_STORAGE___SS_FAMILY
 
-/* Define to 1 if `f_favail' is member of `struct statfs'. */
+/* Define to 1 if `f_favail' is a member of `struct statfs'. */
 #undef HAVE_STRUCT_STATFS_F_FAVAIL
 
-/* Define to 1 if `f_ffree' is member of `struct statfs'. */
+/* Define to 1 if `f_ffree' is a member of `struct statfs'. */
 #undef HAVE_STRUCT_STATFS_F_FFREE
 
-/* Define to 1 if `f_files' is member of `struct statfs'. */
+/* Define to 1 if `f_files' is a member of `struct statfs'. */
 #undef HAVE_STRUCT_STATFS_F_FILES
 
-/* Define to 1 if `f_flags' is member of `struct statfs'. */
+/* Define to 1 if `f_flags' is a member of `struct statfs'. */
 #undef HAVE_STRUCT_STATFS_F_FLAGS
 
-/* Define to 1 if `f_frsize' is member of `struct statfs'. */
+/* Define to 1 if `f_frsize' is a member of `struct statfs'. */
 #undef HAVE_STRUCT_STATFS_F_FRSIZE
 
-/* Define to 1 if `f_files' is member of `struct statvfs'. */
+/* Define to 1 if `f_files' is a member of `struct statvfs'. */
 #undef HAVE_STRUCT_STATVFS_F_FILES
 
-/* Define to 1 if `f_frsize' is member of `struct statvfs'. */
+/* Define to 1 if `f_frsize' is a member of `struct statvfs'. */
 #undef HAVE_STRUCT_STATVFS_F_FRSIZE
 
-/* Define to 1 if `mnt_dir' is member of `struct statvfs'. */
+/* Define to 1 if `mnt_dir' is a member of `struct statvfs'. */
 #undef HAVE_STRUCT_STATVFS_MNT_DIR
 
-/* Define to 1 if `sw_nblksenabled' is member of `struct swdevt'. */
+/* Define to 1 if `sw_nblksenabled' is a member of `struct swdevt'. */
 #undef HAVE_STRUCT_SWDEVT_SW_NBLKSENABLED
 
-/* Define to 1 if `tcp_rcvmemdrop' is member of `struct tcpstat'. */
+/* Define to 1 if `tcp_rcvmemdrop' is a member of `struct tcpstat'. */
 #undef HAVE_STRUCT_TCPSTAT_TCP_RCVMEMDROP
 
-/* Define to 1 if `tz_dsttime' is member of `struct timezone'. */
+/* Define to 1 if `tz_dsttime' is a member of `struct timezone'. */
 #undef HAVE_STRUCT_TIMEZONE_TZ_DSTTIME
 
-/* Define to 1 if `tm_gmtoff' is member of `struct tm'. */
+/* Define to 1 if `tm_isdst' is a member of `struct time'. */
+#undef HAVE_STRUCT_TIME_TM_ISDST
+
+/* Define to 1 if `tm_gmtoff' is a member of `struct tm'. */
 #undef HAVE_STRUCT_TM_TM_GMTOFF
 
-/* Define to 1 if `udps_discard' is member of `struct udpstat'. */
+/* Define to 1 if `udps_discard' is a member of `struct udpstat'. */
 #undef HAVE_STRUCT_UDPSTAT_UDPS_DISCARD
 
-/* Define to 1 if `udps_fullsock' is member of `struct udpstat'. */
+/* Define to 1 if `udps_fullsock' is a member of `struct udpstat'. */
 #undef HAVE_STRUCT_UDPSTAT_UDPS_FULLSOCK
 
-/* Define to 1 if `udps_noport' is member of `struct udpstat'. */
+/* Define to 1 if `udps_ipackets' is a member of `struct udpstat'. */
+#undef HAVE_STRUCT_UDPSTAT_UDPS_IPACKETS
+
+/* Define to 1 if `udps_noport' is a member of `struct udpstat'. */
 #undef HAVE_STRUCT_UDPSTAT_UDPS_NOPORT
 
-/* Define to 1 if `udps_noportbcast' is member of `struct udpstat'. */
+/* Define to 1 if `udps_noportbcast' is a member of `struct udpstat'. */
 #undef HAVE_STRUCT_UDPSTAT_UDPS_NOPORTBCAST
 
-/* Define to 1 if `udps_opackets' is member of `struct udpstat'. */
+/* Define to 1 if `udps_opackets' is a member of `struct udpstat'. */
 #undef HAVE_STRUCT_UDPSTAT_UDPS_OPACKETS
+
+/* Define to 1 if `pgswapin' is a member of `struct uvmexp'. */
+#undef HAVE_STRUCT_UVMEXP_PGSWAPIN
 
 /* Define to 1 if you have the `sysconf' function. */
 #undef HAVE_SYSCONF
@@ -1055,6 +1242,12 @@
 /* Define to 1 if you have the <sys/sysget.h> header file. */
 #undef HAVE_SYS_SYSGET_H
 
+/* Define to 1 if you have the <sys/syslog.h> header file. */
+#undef HAVE_SYS_SYSLOG_H
+
+/* Define to 1 if you have the <sys/sysmacros.h> header file. */
+#undef HAVE_SYS_SYSMACROS_H
+
 /* Define to 1 if you have the <sys/sysmp.h> header file. */
 #undef HAVE_SYS_SYSMP_H
 
@@ -1124,6 +1317,15 @@
 /* Define to 1 if you have the `times' function. */
 #undef HAVE_TIMES
 
+/* Define if a timezone variable is declared in <sys/time.h> */
+#undef HAVE_TIMEZONE_VARIABLE
+
+/* Define to 1 if you have the `TLSv1_method' function. */
+#undef HAVE_TLSV1_METHOD
+
+/* Define to 1 if you have the `TLS_method' function. */
+#undef HAVE_TLS_METHOD
+
 /* Define to 1 if you have the <ufs/ffs/fs.h> header file. */
 #undef HAVE_UFS_FFS_FS_H
 
@@ -1169,6 +1371,15 @@
 /* Define to 1 if you have the <uvm/uvm_param.h> header file. */
 #undef HAVE_UVM_UVM_PARAM_H
 
+/* Define to 1 if you have the <valgrind/memcheck.h> header file. */
+#undef HAVE_VALGRIND_MEMCHECK_H
+
+/* Define to 1 if you have the <valgrind/valgrind.h> header file. */
+#undef HAVE_VALGRIND_VALGRIND_H
+
+/* Define to 1 if you have the <validator/validator-config.h> header file. */
+#undef HAVE_VALIDATOR_VALIDATOR_CONFIG_H
+
 /* Define to 1 if you have the <vm/swap_pager.h> header file. */
 #undef HAVE_VM_SWAP_PAGER_H
 
@@ -1196,6 +1407,15 @@
 /* Define to 1 if you have the <ws2tcpip.h> header file. */
 #undef HAVE_WS2TCPIP_H
 
+/* Define to 1 if you have the `X509_get_signature_nid' function. */
+#undef HAVE_X509_GET_SIGNATURE_NID
+
+/* Define to 1 if you have the `X509_NAME_ENTRY_get_data' function. */
+#undef HAVE_X509_NAME_ENTRY_GET_DATA
+
+/* Define to 1 if you have the `X509_NAME_ENTRY_get_object' function. */
+#undef HAVE_X509_NAME_ENTRY_GET_OBJECT
+
 /* Define to 1 if you have the <xti.h> header file. */
 #undef HAVE_XTI_H
 
@@ -1215,6 +1435,13 @@
 /* Unix domain socket for AgentX master-subagent communication */
 #undef NETSNMP_AGENTX_SOCKET
 
+/* Used to make the compiler issue a warning about deprecated functions and
+   variables */
+#undef NETSNMP_ATTRIBUTE_DEPRECATED
+
+/* Used to suppress compiler warnings about unused functions and variables */
+#undef NETSNMP_ATTRIBUTE_UNUSED
+
 /* Define if static inline functions are unsupported */
 #undef NETSNMP_BROKEN_INLINE
 
@@ -1227,12 +1454,21 @@
 /* configure options specified */
 #undef NETSNMP_CONFIGURE_OPTIONS
 
+/* if defined daemons will use syslog when no log destination is defined */
+#undef NETSNMP_DAEMONS_DEFAULT_LOG_SYSLOG
+
 /* default location to look for mibs to load using the above tokens and/or
    those in the MIBS envrionment variable */
 #undef NETSNMP_DEFAULT_MIBDIRS
 
 /* default mib files to load, specified by path. */
 #undef NETSNMP_DEFAULT_MIBFILES
+
+/* Define if no agent is built */
+#undef NETSNMP_DISABLE_AGENT
+
+/* Define if no apps are built */
+#undef NETSNMP_DISABLE_APPS
 
 /* Define if DES encryption should not be supported */
 #undef NETSNMP_DISABLE_DES
@@ -1251,6 +1487,9 @@
 
 /* Define if SNMPv2c code should not be included */
 #undef NETSNMP_DISABLE_SNMPV2C
+
+/* Define if AES-192/AES-256 encryption should be supported */
+#undef NETSNMP_DRAFT_BLUMENTHAL_AES_04
 
 /* Define if you are embedding perl in the main agent. */
 #undef NETSNMP_EMBEDDED_PERL
@@ -1271,11 +1510,23 @@
 /* testing code sections. */
 #undef NETSNMP_ENABLE_TESTING_CODE
 
+/* if defined always use default auth/priv protocol when creating usmUsers */
+#undef NETSNMP_FORCE_SYSTEM_V3_AUTHPRIV
+
 /* Should evaluate to the name of the current function if defined */
 #undef NETSNMP_FUNCTION
 
 /* ifnet needs to have _KERNEL defined */
 #undef NETSNMP_IFNET_NEEDS_KERNEL
+
+/* ifnet needs to have _KERNEL_STRUCTURES defined */
+#undef NETSNMP_IFNET_NEEDS_KERNEL_STRUCTURES
+
+/* Define if you want to remove all non-essential code features. */
+#undef NETSNMP_MINIMAL_CODE
+
+/* Define if you want to only support sending notifications */
+#undef NETSNMP_NOTIFY_ONLY
 
 /* Define to suppress inclusion of deprecated functions */
 #undef NETSNMP_NO_DEPRECATED_FUNCTIONS
@@ -1287,8 +1538,17 @@
 /* If we don't want to use kmem. */
 #undef NETSNMP_NO_KMEM_USAGE
 
+/* Define if you want to remove all listening support from the code */
+#undef NETSNMP_NO_LISTEN_SUPPORT
+
 /* If you don't have root access don't exit upon kmem errors */
 #undef NETSNMP_NO_ROOT_ACCESS
+
+/* If you don't want to integrate with systemd. */
+#undef NETSNMP_NO_SYSTEMD
+
+/* Define if you want to remove all SET/write access from the code */
+#undef NETSNMP_NO_WRITE_SUPPORT
 
 /* umask permissions to set up persistent files with */
 #undef NETSNMP_PERSISTENT_MASK
@@ -1354,6 +1614,9 @@
 #undef PACKAGE_TARNAME
 #endif
 
+/* Define to the home page for this package. */
+#undef PACKAGE_URL
+
 /* Define to the version of this package. */
 #ifndef PACKAGE_VERSION
 #undef PACKAGE_VERSION
@@ -1371,6 +1634,10 @@
 
 /* Use BSD 4.4 routing table entries? */
 #undef RTENTRY_4_4
+
+/* Qualifier for second argument of the appverify_cookie_cb() callback
+   function */
+#undef SECOND_APPVERIFY_COOKIE_CB_ARG_QUALIFIER
 
 /* The size of `int', as computed by sizeof. */
 #undef SIZEOF_INT
@@ -1462,9 +1729,6 @@
 /* Define to 1 if you need to in order for `stat' and other things to work. */
 #undef _POSIX_SOURCE
 
-/* Define if you have RPM 4.6 or newer to turn on legacy API */
-#undef _RPM_4_4_COMPAT
-
 /* Define for Solaris 2.5.1 so the uint32_t typedef from <sys/synch.h>,
    <pthread.h>, or <semaphore.h> is not used. If the typedef were allowed, the
    #define below would cause a syntax error. */
@@ -1519,6 +1783,9 @@
 /* Define to `int' if <sys/types.h> does not define. */
 #undef pid_t
 
+/* Define to `unsigned int' if <sys/types.h> does not define. */
+#undef size_t
+
 /* Define to the type of an unsigned integer type of width exactly 16 bits if
    such a type exists and the standard includes do not define it. */
 #undef uint16_t
@@ -1551,20 +1818,6 @@
 #define HAVE_AES 1
 #endif
 
-/* define random functions */
-
-#ifndef HAVE_RANDOM
-#ifdef HAVE_LRAND48
-#define random lrand48
-#define srandom(s) srand48(s)
-#else
-#ifdef HAVE_RAND
-#define random rand
-#define srandom(s) srand(s)
-#endif
-#endif
-#endif
-
 /* define signal if DNE */
 
 #ifndef HAVE_SIGNAL
@@ -1573,7 +1826,7 @@
 #endif
 #endif
 
-#if HAVE_DMALLOC_H
+#ifdef HAVE_DMALLOC_H
 #define DMALLOC_FUNC_CHECK
 #endif
 
@@ -1715,6 +1968,7 @@
 #define NETSNMP_HPUX11ID 14
 #define NETSNMP_AIXID 15
 #define NETSNMP_MACOSXID 16
+#define NETSNMP_DRAGONFLYID 17
 #define NETSNMP_UNKNOWNID 255
 
 #ifdef hpux9
@@ -1744,6 +1998,9 @@
 #if defined(__FreeBSD__)
 #define NETSNMP_OSTYPE NETSNMP_FREEBSDID
 #endif
+#if defined(__DragonFly__)
+#define NETSNMP_OSTYPE NETSNMP_DRAGONFLYID
+#endif
 #if defined(irix6) || defined(irix5)
 #define NETSNMP_OSTYPE NETSNMP_IRIXID
 #endif
@@ -1753,7 +2010,7 @@
 #if defined(bsdi2) || defined(bsdi3) || defined(bsdi4)
 #define NETSNMP_OSTYPE NETSNMP_BSDIID
 #endif
-#if defined(openbsd2) || defined(openbsd3) || defined(openbsd4)
+#if defined(openbsd)
 #define NETSNMP_OSTYPE NETSNMP_OPENBSDID
 #endif
 #ifdef WIN32
@@ -1816,7 +2073,7 @@
 
 #define NETSNMP_EXCACHETIME 30
 #define NETSNMP_CACHEFILE ".snmp-exec-cache"
-#define NETSNMP_MAXCACHESIZE (200*80)   /* roughly 200 lines max */
+#define NETSNMP_MAXCACHESIZE (1500*80)   /* roughly 1500 lines max */
 
 /* misc defaults */
 
@@ -1844,9 +2101,6 @@
 /* UNdefine to allow specifying zero-length community string */
 /* #define NETSNMP_NO_ZEROLENGTH_COMMUNITY 1 */
 
-/* define to exit the agent on a bad kernel read */
-/* #define NETSNMP_EXIT_ON_BAD_KLREAD  */
-
 /* Number of community strings to store */
 #define NETSNMP_NUM_COMMUNITIES	5
 
@@ -1858,6 +2112,10 @@
 /*  This is defined if support for the UDP/IP transport domain is
     available.   */
 #undef NETSNMP_TRANSPORT_UDP_DOMAIN
+
+/*  This is defined if support for the shared UDP/IP transport domain is
+    available.   */
+#undef NETSNMP_TRANSPORT_UDPSHARED_DOMAIN
 
 /*  This is defined if support for the "callback" transport domain is
     available.   */
@@ -1978,10 +2236,10 @@
 #if NETSNMP_ENABLE_INLINE && !defined(NETSNMP_NO_INLINE)
 #   define NETSNMP_USE_INLINE 1
 #   ifndef NETSNMP_INLINE
-#      define NETSNMP_INLINE inline
+#      define NETSNMP_INLINE __inline__
 #   endif
 #   ifndef NETSNMP_STATIC_INLINE
-#      define NETSNMP_STATIC_INLINE static inline
+#      define NETSNMP_STATIC_INLINE static __inline__
 #   endif
 #else
 #   define NETSNMP_INLINE 
@@ -1995,9 +2253,6 @@
 /* comment the next line if you are compiling with libsnmp.h 
    and are not using the UC-Davis SNMP library. */
 #define UCD_SNMP_LIBRARY 1
-
-/* add in recent CMU library extensions (not complete) */
-#undef CMU_COMPATIBLE
 
 /* final conclusion on nlist usage */
 #if defined(HAVE_NLIST) && defined(HAVE_STRUCT_NLIST_N_VALUE) && !defined(NETSNMP_DONT_USE_NLIST) && !defined(NETSNMP_NO_KMEM_USAGE)
@@ -2204,10 +2459,6 @@
 
 #ifdef NETSNMP_NO_ZEROLENGTH_COMMUNITY
 # define NO_ZEROLENGTH_COMMUNITY NETSNMP_NO_ZEROLENGTH_COMMUNITY
-#endif
-
-#ifdef NETSNMP_EXIT_ON_BAD_KLREAD
-# define EXIT_ON_BAD_KLREAD NETSNMP_EXIT_ON_BAD_KLREAD
 #endif
 
 #define LASTFIELD NETSNMP_LASTFIELD

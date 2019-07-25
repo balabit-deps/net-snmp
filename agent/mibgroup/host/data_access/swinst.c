@@ -7,21 +7,23 @@
  * distributed with the Net-SNMP package.
  */
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
 #include <net-snmp/data_access/swinst.h>
-
 #include <stdlib.h>
 #include <unistd.h>
+#include "swinst.h"
+#include "swinst_private.h"
+
+netsnmp_feature_child_of(software_installed, libnetsnmpmibs)
+
+netsnmp_feature_child_of(swinst_entry_remove, netsnmp_unused)
 
 /* ---------------------------------------------------------------------
  */
 
 static void netsnmp_swinst_entry_free_cb(netsnmp_swinst_entry *, void *);
-
-extern void netsnmp_swinst_arch_init(void);
-extern void netsnmp_swinst_arch_shutdown(void);
-extern int netsnmp_swinst_arch_load(netsnmp_container *, u_int);
 
 void init_swinst( void )
 {
@@ -163,7 +165,8 @@ netsnmp_swinst_entry_create(int32_t swIndex)
 void
 netsnmp_swinst_entry_free(netsnmp_swinst_entry *entry)
 {
-    DEBUGMSGTL(("swinst:entry:free", "index %d\n",entry->swIndex));
+    DEBUGMSGTL(("swinst:entry:free", "index %" NETSNMP_PRIo "u\n",
+                entry->swIndex));
 
     free(entry);
 }
@@ -180,6 +183,7 @@ netsnmp_swinst_entry_free_cb(netsnmp_swinst_entry *entry, void *context)
 /*
  * remove a row from the table 
  */
+#ifndef NETSNMP_FEATURE_REMOVE_SWINST_ENTRY_REMOVE
 void
 netsnmp_swinst_entry_remove(netsnmp_container * container,
                             netsnmp_swinst_entry *entry)
@@ -189,6 +193,7 @@ netsnmp_swinst_entry_remove(netsnmp_container * container,
         return;                 /* Nothing to remove */
     CONTAINER_REMOVE(container, entry);
 }
+#endif /* NETSNMP_FEATURE_REMOVE_SWINST_ENTRY_REMOVE */
 
 /* ---------------------------------------------------------------------
  */

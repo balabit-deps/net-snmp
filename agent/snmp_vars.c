@@ -41,6 +41,11 @@ PERFORMANCE OF THIS SOFTWARE.
  * Copyright © 2003 Sun Microsystems, Inc. All rights reserved.
  * Use is subject to license terms specified in the COPYING file
  * distributed with the Net-SNMP package.
+ *
+ * Portions of this file are copyrighted by:
+ * Copyright (c) 2016 VMware, Inc. All rights reserved.
+ * Use is subject to license terms specified in the COPYING file
+ * distributed with the Net-SNMP package.
  */
 
 /*
@@ -49,12 +54,6 @@ PERFORMANCE OF THIS SOFTWARE.
  * Linux additions taken from CMU to UCD stack by Jennifer Bray of Origin
  * (jbray@origin-at.co.uk) 1997
  */
-/*
- * Portions of this file are copyrighted by:
- * Copyright © 2003 Sun Microsystems, Inc. All rights reserved.
- * Use is subject to license terms specified in the COPYING file
- * distributed with the Net-SNMP package.
- */
 
 /*
  * XXXWWW merge todo: incl/excl range changes in differences between
@@ -62,6 +61,9 @@ PERFORMANCE OF THIS SOFTWARE.
  */
 
 #include <net-snmp/net-snmp-config.h>
+#if HAVE_SYS_PARAM_H
+#include <sys/param.h>
+#endif
 #if HAVE_STRING_H
 #include <string.h>
 #endif
@@ -71,6 +73,7 @@ PERFORMANCE OF THIS SOFTWARE.
 #include <sys/types.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #if TIME_WITH_SYS_TIME
 # include <sys/time.h>
@@ -133,6 +136,7 @@ PERFORMANCE OF THIS SOFTWARE.
 #include <net-snmp/agent/net-snmp-agent-includes.h>
 #include <net-snmp/agent/mib_modules.h>
 #include <net-snmp/agent/agent_sysORTable.h>
+#include "agent_global_vars.h"
 #include "kernel.h"
 
 #include "mibgroup/struct.h"
@@ -141,8 +145,13 @@ PERFORMANCE OF THIS SOFTWARE.
 #include "agentx/subagent.h"
 #include "net-snmp/agent/all_helpers.h"
 #include "agent_module_includes.h"
-#include "mib_module_includes.h"
 #include "net-snmp/library/container.h"
+
+#if defined(NETSNMP_USE_OPENSSL) && defined(HAVE_LIBSSL)
+#include <openssl/ssl.h>
+#include <openssl/x509v3.h>
+#include <net-snmp/library/cert_util.h>
+#endif
 
 #include "snmp_perl.h"
 
@@ -167,8 +176,6 @@ struct module_init_list *noinitlist = NULL;
  * * the expense of a few memcpy's.
  */
 #define MIB_CLIENTS_ARE_EVIL 1
-
-extern netsnmp_subtree *subtrees;
 
 /*
  *      Each variable name is placed in the variable table, without the
@@ -227,6 +234,9 @@ u_char          return_buf[258];
 u_char          return_buf[256];        /* nee 64 */
 #endif
 
+static int
+_warn_if_all_disabled(int maj, int min, void *serverarg, void *clientarg);
+
 int             callback_master_num = -1;
 
 #ifdef NETSNMP_TRANSPORT_CALLBACK_DOMAIN
@@ -282,8 +292,8 @@ init_agent(const char *app)
     netsnmp_ds_set_boolean(NETSNMP_DS_LIBRARY_ID, 
 			   NETSNMP_DS_LIB_ALARM_DONT_USE_SIG, 1);
 
-#ifdef NETSNMP_CAN_USE_NLIST
-    init_kmem("/dev/kmem");
+#ifdef HAVE_KMEM
+    r = init_kmem("/dev/kmem") ? 0 : -EACCES;
 #endif
 
     setup_tree();
@@ -295,7 +305,13 @@ init_agent(const char *app)
 #endif
 
     _init_agent_callback_transport();
-    
+
+#ifndef NETSNMP_FEATURE_REMOVE_RUNTIME_DISABLE_VERSION
+    snmp_register_callback(SNMP_CALLBACK_LIBRARY,
+                           SNMP_CALLBACK_POST_READ_CONFIG,
+                           _warn_if_all_disabled, NULL);
+#endif /* NETSNMP_FEATURE_REMOVE_RUNTIME_DISABLE_VERSION */
+
     netsnmp_init_helpers();
     init_traps();
     netsnmp_container_init_list();
@@ -330,7 +346,7 @@ init_agent(const char *app)
     init_perl();
 #endif
 
-#if defined(NETSNMP_USE_OPENSSL) && defined(HAVE_LIBSSL)
+#if defined(NETSNMP_USE_OPENSSL) && defined(HAVE_LIBSSL) && NETSNMP_TRANSPORT_TLSBASE_DOMAIN
     /** init secname mapping */
     netsnmp_certs_agent_init();
 #endif
@@ -366,9 +382,9 @@ shutdown_agent(void) {
     clear_sec_mod();
     clear_snmp_enum();
     clear_callback();
-    clear_user_list();
+    shutdown_secmod();
     netsnmp_addrcache_destroy();
-#ifdef NETSNMP_CAN_USE_NLIST
+#ifdef HAVE_KMEM
     free_kmem();
 #endif
 
@@ -449,5 +465,48 @@ should_init(const char *module_name)
      */
     return DO_INITIALIZE;
 }
+
+static int
+_warn_if_all_disabled(int maj, int min, void *serverarg, void *clientarg)
+{
+    const char * name = netsnmp_ds_get_string(NETSNMP_DS_LIBRARY_ID,
+                                              NETSNMP_DS_LIB_APPTYPE);
+    const int agent_mode =  netsnmp_ds_get_boolean(NETSNMP_DS_APPLICATION_ID,
+                                                   NETSNMP_DS_AGENT_ROLE);
+    int enabled = 0;
+    if (NULL==name)
+        name = "snmpd";
+
+    if (!netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID,
+                                NETSNMP_DS_LIB_DISABLE_V3))
+        ++enabled;
+#ifndef NETSNMP_DISABLE_SNMPV2C
+    if (!netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID,
+                                NETSNMP_DS_LIB_DISABLE_V2c))
+        ++enabled;
+#endif /* NETSNMP_DISABLE_SNMPV2C */
+#ifndef NETSNMP_DISABLE_SNMPV1
+    if (!netsnmp_ds_get_boolean(NETSNMP_DS_LIBRARY_ID,
+                                NETSNMP_DS_LIB_DISABLE_V1))
+        ++enabled;
+#endif /* NETSNMP_DISABLE_SNMPV1 */
+
+    if (0 == enabled) {
+        if ((MASTER_AGENT == agent_mode) && (strcmp(name, "snmptrapd") != 0)) {
+            snmp_log(LOG_WARNING,
+                     "Warning: all protocol versions are runtime disabled.\n"
+                 "  It's unlikely this agent can serve any useful purpose in this state.\n"
+                     "  Check %s.conf file(s) for this agent.\n", name);
+        } else if (!strcmp(name, "snmptrapd") &&
+            !netsnmp_ds_get_boolean(NETSNMP_DS_APPLICATION_ID,
+                                    NETSNMP_DS_APP_NO_AUTHORIZATION)) {
+            snmp_log(LOG_WARNING,
+                     "Warning: all protocol versions are runtime disabled.\n"
+                     "This receiver will *NOT* accept any incoming notifications.\n");
+        }
+    }
+    return SNMP_ERR_NOERROR;
+}
+
 /**  @} */
 

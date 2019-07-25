@@ -41,11 +41,9 @@
 #include <net-snmp/library/scapi.h>
 #include <net-snmp/library/transform_oids.h>
 #include <net-snmp/library/callback.h>
+#include <net-snmp/library/getopt.h>
 
 #include <stdlib.h>
-
-extern char    *optarg;
-extern int      optind, optopt, opterr;
 
 int testcount = 0;
 
@@ -96,24 +94,18 @@ int             doalltests = 0, dogenKu = 0, dogenkul = 0, dokeychange = 0;
 #define OLDKEY_DEFAULT		"This is a very old key."
 #define NEWKEY_DEFAULT		"This key, on the other hand, is very new."
 
+#define USM_LENGTH_OID_TRANSFORM OID_LENGTH(usmHMACSHA1AuthProtocol)
+
 u_char         *engineID = NULL;
 char           *passphrase = NULL;
 const u_char   *oldkey = NULL;
 const u_char   *newkey = NULL;
 int             bequiet = 0;
 
-
-/*
- * Prototypes.
- */
-void            usage(FILE * ofp);
-
-int             test_genkul(void);
-int             test_genKu(void);
-int             test_keychange(void);
-
-
-
+static void usage(FILE *);
+static int test_genKu(void);
+static int test_genkul(void);
+static int test_keychange(void);
 
 int
 main(int argc, char **argv)
@@ -158,6 +150,7 @@ main(int argc, char **argv)
             break;
         case 'h':
             rval = 0;
+            /* fall through */
         default:
             usage(stdout);
             exit(rval);
@@ -360,7 +353,6 @@ test_genkul(void)
     char           *s = NULL;
     const char *testname = "Using HMACMD5 to create master key.";
     const char *hashname_Ku = "usmHMACMD5AuthProtocol";
-    const char *hashname_kul = NULL;
 
     u_char          Ku[LOCAL_MAXBUF], kul[LOCAL_MAXBUF];
 
@@ -402,9 +394,7 @@ test_genkul(void)
         fprintf(stdout, "# engineID%s (len=%d):  %s\n",
                 (isdefault) ? " (default)" : "",
                 engineID_len, ((s != 0) ? ((u_char *) s) : engineID));
-    if (s) {
-        SNMP_FREE(s);
-    }
+    SNMP_FREE(s);
 
 
 
@@ -415,7 +405,6 @@ test_genkul(void)
   test_genkul_again_master:
     memset(Ku, 0, LOCAL_MAXBUF);
     kulen = LOCAL_MAXBUF;
-    hashname_kul = "usmHMACMD5AuthProtocol";
     hashtype_kul = usmHMACMD5AuthProtocol;
     properlength = BYTESIZE(SNMP_TRANS_AUTHLEN_HMACMD5);
 
@@ -463,7 +452,6 @@ test_genkul(void)
      */
     if (hashtype_kul == usmHMACMD5AuthProtocol) {
         hashtype_kul = usmHMACSHA1AuthProtocol;
-        hashname_kul = "usmHMACSHA1AuthProtocol";
         properlength = BYTESIZE(SNMP_TRANS_AUTHLEN_HMACSHA1);
         goto test_genkul_again_local;
     }

@@ -72,11 +72,13 @@ netsnmp_multiplexer_helper_handler(netsnmp_mib_handler *handler,
         if (handler)
             break;
         /* Deliberate fallthrough to use GetNext handler */
+	/* FALL THROUGH */
     case MODE_GETNEXT:
         handler = methods->getnext_handler;
         if (handler)
             break;
         /* Deliberate fallthrough to use Get handler */
+	/* FALL THROUGH */
     case MODE_GET:
         handler = methods->get_handler;
         if (!handler) {
@@ -84,6 +86,7 @@ netsnmp_multiplexer_helper_handler(netsnmp_mib_handler *handler,
         }
         break;
 
+#ifndef NETSNMP_NO_WRITE_SUPPORT
     case MODE_SET_RESERVE1:
     case MODE_SET_RESERVE2:
     case MODE_SET_ACTION:
@@ -100,6 +103,7 @@ netsnmp_multiplexer_helper_handler(netsnmp_mib_handler *handler,
         /*
          * XXX: process SETs specially, and possibly others 
          */
+#endif /* NETSNMP_NO_WRITE_SUPPORT */
     default:
         snmp_log(LOG_ERR, "unsupported mode for multiplexer: %d\n",
                  reqinfo->mode);

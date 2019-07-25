@@ -39,7 +39,8 @@ dot3stats_interface_name_list_get (struct ifname *list_head, int *retval)
     for (p = addrs; p; p = p->ifa_next) {
 
         if (!list_head) {
-            if ( (list_head = (struct ifname *) malloc (sizeof(struct ifname))) < 0) {
+            list_head = malloc(sizeof(struct ifname));
+            if (!list_head) {
                 DEBUGMSGTL(("access:dot3StatsTable:interface_name_list_get",
                             "memory allocation failed\n"));
                 snmp_log (LOG_ERR, "access:dot3StatsTable,interface_name_list_get, memory allocation failed\n");
@@ -47,8 +48,8 @@ dot3stats_interface_name_list_get (struct ifname *list_head, int *retval)
                 *retval = -2;
                 return NULL;
             }
-            memset (list_head, 0, sizeof (struct ifname));
-            strncpy (list_head->name, p->ifa_name, IF_NAMESIZE);
+            memset(list_head, 0, sizeof (struct ifname));
+            strlcpy(list_head->name, p->ifa_name, IF_NAMESIZE);
             continue;
         }
 
@@ -59,7 +60,8 @@ dot3stats_interface_name_list_get (struct ifname *list_head, int *retval)
         if (nameptr1)
             continue;
 
-        if ( (nameptr2->ifn_next = (struct ifname *) malloc (sizeof(struct ifname))) < 0) {
+        nameptr2->ifn_next = malloc(sizeof(struct ifname));
+        if (!nameptr2->ifn_next) {
             DEBUGMSGTL(("access:dot3StatsTable:interface_name_list_get",
                         "memory allocation failed\n"));
             snmp_log (LOG_ERR, "access:dot3StatsTable,interface_name_list_get, memory allocation failed\n");
@@ -69,8 +71,8 @@ dot3stats_interface_name_list_get (struct ifname *list_head, int *retval)
             return NULL;
         }
         nameptr2 = nameptr2->ifn_next;
-        memset (nameptr2, 0, sizeof (struct ifname));
-        strncpy (nameptr2->name, p->ifa_name, IF_NAMESIZE);
+        memset(nameptr2, 0, sizeof (struct ifname));
+        strlcpy(nameptr2->name, p->ifa_name, IF_NAMESIZE);
         continue;
 
     }
@@ -152,7 +154,7 @@ struct rtnl_handle {
 
 struct ifstat_ent {
     struct ifstat_ent *next;
-    const char *name;
+    char *name;
     int ifindex;
     struct rtnl_link_stats stats;
 };
@@ -440,7 +442,7 @@ _dot3Stats_netlink_get_errorcntrs(dot3StatsTable_rowreq_ctx *rowreq_ctx, const c
         {
             dot3StatsTable_data *data = &rowreq_ctx->data;
 
-            snmp_log(LOG_ERR, "IFLA_STATS for %s\n", name);
+            DEBUGMSGTL(("access:dot3StatsTable", "IFLA_STATS for %s\n", name));
 
             data->dot3StatsFCSErrors = ke->stats.rx_crc_errors;
             rowreq_ctx->column_exists_flags |= COLUMN_DOT3STATSFCSERRORS_FLAG;
@@ -463,6 +465,7 @@ _dot3Stats_netlink_get_errorcntrs(dot3StatsTable_rowreq_ctx *rowreq_ctx, const c
             done = 1;
         }
         kern_db = ke->next;
+        free(ke->name);
         free(ke);
     }
 
@@ -527,7 +530,7 @@ interface_dot3stats_get_errorcounters (dot3StatsTable_rowreq_ctx *rowreq_ctx, co
 
     if (_dot3Stats_netlink_get_errorcntrs(rowreq_ctx, name) == 0)
     {
-        snmp_log(LOG_NOTICE, "interface_dot3stats_get_errorcounters: got data from IFLA_STATS\n");
+        DEBUGMSGTL(("access:dot3StatsTable", "interface_dot3stats_get_errorcounters: got data from IFLA_STATS\n"));
         return;
     }
 
@@ -648,14 +651,14 @@ interface_ioctl_dot3stats_get (dot3StatsTable_rowreq_ctx *rowreq_ctx, int fd, co
     struct ethtool_gstrings *eth_strings;
     struct ethtool_stats *eth_stats;
     struct ifreq ifr; 
-    unsigned int nstats, size_str, size_stats, i;
+    unsigned int nstats, size_str, i;
     int err;
 
     DEBUGMSGTL(("access:dot3StatsTable:interface_ioctl_dot3Stats_get",
                 "called\n"));
 
     memset(&ifr, 0, sizeof(ifr));
-    strcpy(ifr.ifr_name, name);
+    strlcpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
 
     memset(&driver_info, 0, sizeof (driver_info));
     driver_info.cmd = ETHTOOL_GDRVINFO;
@@ -676,7 +679,6 @@ interface_ioctl_dot3stats_get (dot3StatsTable_rowreq_ctx *rowreq_ctx, int fd, co
     }
 
     size_str = nstats * ETH_GSTRING_LEN;
-    size_stats = nstats * sizeof(u64);
 
     eth_strings = malloc(size_str + sizeof (struct ethtool_gstrings));
     if (!eth_strings) {
@@ -731,12 +733,17 @@ interface_ioctl_dot3stats_get (dot3StatsTable_rowreq_ctx *rowreq_ctx, int fd, co
     for (i = 0; i < nstats; i++) {
         char s[ETH_GSTRING_LEN];
 
-        strncpy(s, (const char *) &eth_strings->data[i * ETH_GSTRING_LEN],
-            ETH_GSTRING_LEN);
+        strlcpy(s, (const char *) &eth_strings->data[i * ETH_GSTRING_LEN],
+                sizeof(s));
     
         if (DOT3STATSALIGNMENTERRORS(s)) {
             data->dot3StatsAlignmentErrors = (u_long)eth_stats->data[i];
             rowreq_ctx->column_exists_flags |= COLUMN_DOT3STATSALIGNMENTERRORS_FLAG;
+        }
+
+        if (DOT3STATSFCSERRORS(s)) {
+            data->dot3StatsFCSErrors = (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_DOT3STATSFCSERRORS_FLAG;
         }
 
         if (DOT3STATSMULTIPLECOLLISIONFRAMES(s)) {
@@ -757,6 +764,10 @@ interface_ioctl_dot3stats_get (dot3StatsTable_rowreq_ctx *rowreq_ctx, int fd, co
         if (DOT3STATSEXCESSIVECOLLISIONS(s)) {
             data->dot3StatsExcessiveCollisions = (u_long)eth_stats->data[i];
             rowreq_ctx->column_exists_flags |= COLUMN_DOT3STATSEXCESSIVECOLLISIONS_FLAG;
+        }
+        if (DOT3STATSDEFERREDTRANSMISSIONS(s)) {
+            data->dot3StatsDeferredTransmissions = (u_long)eth_stats->data[i];
+            rowreq_ctx->column_exists_flags |= COLUMN_DOT3STATSDEFERREDTRANSMISSIONS_FLAG;
         }
     }
 
@@ -912,8 +923,7 @@ _dot3Stats_ioctl_get(int fd, int which, struct ifreq *ifrq, const char* name)
         }
     }
 
-    strncpy(ifrq->ifr_name, name, sizeof(ifrq->ifr_name));
-    ifrq->ifr_name[ sizeof(ifrq->ifr_name)-1 ] = 0;
+    strlcpy(ifrq->ifr_name, name, sizeof(ifrq->ifr_name));
     rc = ioctl(fd, which, ifrq);
     if (rc < 0) {
         DEBUGMSGTL(("access:dot3StatsTable:ioctl",

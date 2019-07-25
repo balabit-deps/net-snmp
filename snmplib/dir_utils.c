@@ -9,6 +9,7 @@
  * distributed with the Net-SNMP package.
  */
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #include <net-snmp/net-snmp-includes.h>
 
 #include <stdio.h>
@@ -32,8 +33,12 @@
 #if HAVE_SYS_STAT_H
 #include <sys/stat.h>
 #endif
-#ifdef HAVE_DIRENT_H
-#include <dirent.h>
+#if HAVE_DIRENT_H
+# include <dirent.h>
+# define NAMLEN(dirent) strlen((dirent)->d_name)
+#else
+# define dirent direct
+# define NAMLEN(dirent) (dirent)->d_namlen
 #endif
 
 #include <errno.h>
@@ -47,6 +52,13 @@
 #include <net-snmp/library/file_utils.h>
 #include <net-snmp/library/dir_utils.h>
 
+netsnmp_feature_child_of(container_directory, container_types)
+#ifdef NETSNMP_FEATURE_REQUIRE_CONTAINER_DIRECTORY
+netsnmp_feature_require(file_utils)
+netsnmp_feature_require(container_free_all)
+#endif /* NETSNMP_FEATURE_REQUIRE_CONTAINER_DIRECTORY */
+
+#ifndef NETSNMP_FEATURE_REMOVE_CONTAINER_DIRECTORY
 static int
 _insert_nsfile( netsnmp_container *c, const char *name, struct stat *stats,
                 u_int flags);
@@ -61,7 +73,7 @@ netsnmp_directory_container_read_some(netsnmp_container *user_container,
                                       void *filter_ctx, u_int flags)
 {
     DIR               *dir;
-    netsnmp_container *container = user_container, *tmp_c;
+    netsnmp_container *container = user_container;
     struct dirent     *file;
     char               path[SNMP_MAXPATH];
     size_t             dirname_len;
@@ -114,7 +126,7 @@ netsnmp_directory_container_read_some(netsnmp_container *user_container,
         dirname_len = 0;
     else {
         dirname_len = strlen(dirname);
-        strncpy(path, dirname, sizeof(path));
+        strlcpy(path, dirname, sizeof(path));
         if ((dirname_len + 2) > sizeof(path)) {
             /** not enough room for files */
             closedir(dir);
@@ -123,7 +135,7 @@ netsnmp_directory_container_read_some(netsnmp_container *user_container,
             return NULL;
         }
         path[dirname_len] = '/';
-        path[++dirname_len] = 0;
+        path[++dirname_len] = '\0';
     }
 
     /** iterate over dir */
@@ -138,7 +150,7 @@ netsnmp_directory_container_read_some(netsnmp_container *user_container,
              ((file->d_name[1] == '.') && ((file->d_name[2] == 0)))))
             continue;
 
-        strncpy(&path[dirname_len], file->d_name, sizeof(path) - dirname_len);
+        strlcpy(&path[dirname_len], file->d_name, sizeof(path) - dirname_len);
         if (NULL != filter) {
             if (flags & NETSNMP_DIR_NSFILE_STATS) {
                 /** use local vars for now */
@@ -168,7 +180,7 @@ netsnmp_directory_container_read_some(netsnmp_container *user_container,
 #endif
             ) {
             /** xxx add the dir as well? not for now.. maybe another flag? */
-            tmp_c = netsnmp_directory_container_read(container, path, flags);
+            netsnmp_directory_container_read(container, path, flags);
         }
         else if (flags & NETSNMP_DIR_NSFILE) {
             if (_insert_nsfile( container, file->d_name,
@@ -229,10 +241,13 @@ _insert_nsfile( netsnmp_container *c, const char *name, struct stat *stats,
         }
     
         /** use stats from earlier if we have them */
-        if (stats)
+        if (stats) {
             memcpy(ns_file->stats, stats, sizeof(*stats));
-        else
-            stat(ns_file->name, ns_file->stats);
+        } else if (stat(ns_file->name, ns_file->stats) < 0) {
+            snmp_log(LOG_ERR, "stat() failed for ns_file\n");
+            netsnmp_file_release(ns_file);
+            return -1;
+        }
     }
 
     rc = CONTAINER_INSERT(c, ns_file);
@@ -243,3 +258,6 @@ _insert_nsfile( netsnmp_container *c, const char *name, struct stat *stats,
 
     return 0;
 }
+#else  /* NETSNMP_FEATURE_REMOVE_CONTAINER_DIRECTORY */
+netsnmp_feature_unused(container_directory);
+#endif /* NETSNMP_FEATURE_REMOVE_CONTAINER_DIRECTORY */

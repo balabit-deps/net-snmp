@@ -4,6 +4,11 @@
 # Checks for library functions.
 ##
 #########################################
+#
+# Portions of this file are copyrighted by:
+# Copyright (c) 2016 VMware, Inc. All rights reserved.
+# Use is subject to license terms specified in the COPYING file
+# distributed with the Net-SNMP package.
 
 ##
 #   Standard checks:
@@ -22,17 +27,18 @@ else
 fi
 
 AC_TYPE_SIGNAL
-AC_FUNC_GETMNTENT
 
 ##
 #   Stand-alone function checks:
 ##
 #  Core:
-AC_CHECK_FUNCS([lrand48         rand          random    ] dnl
-               [signal          sigset                  ] )
+AC_CHECK_FUNCS([rand   random srand srandom lrand48 srand48] dnl
+               [signal sigset                              ] )
 
 #  Library:
-AC_CHECK_FUNCS([closedir        fork            getipnodebyname  ] dnl
+AC_CHECK_FUNCS([asprintf                                         ] dnl
+               [closedir        fgetc_unlocked  flockfile        ] dnl
+               [fork            funlockfile     getipnodebyname  ] dnl
                [gettimeofday    if_nametoindex  mkstemp          ] dnl
                [opendir         readdir         regcomp          ] dnl
                [setenv          setitimer       setlocale        ] dnl
@@ -44,6 +50,12 @@ AC_CHECK_FUNCS([closedir        fork            getipnodebyname  ] dnl
 # since these functions have the __cdecl calling convention on MinGW.
 case x$target_os in
   xmingw*)
+    AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <winsock2.h>],
+    [ closesocket(0); ])],
+    [ ac_cv_func_closesocket=yes
+      AS_ECHO "#define HAVE_CLOSESOCKET 1" >>confdefs.h
+    ], [ ])
+
     AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <ws2tcpip.h>],
     [ gai_strerror(0); ])],
     [ ac_cv_func_gai_strerror=yes
@@ -63,6 +75,12 @@ case x$target_os in
     ], [ ])
 
     AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <winsock2.h>],
+    [ gethostbyaddr(NULL); ])],
+    [ ac_cv_func_gethostaddr=yes
+      AS_ECHO "#define HAVE_GETHOSTBYADDR 1" >>confdefs.h
+    ], [ ])
+
+    AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <winsock2.h>],
     [ gethostname(NULL, 0); ])],
     [ ac_cv_func_gethostname=yes
       AS_ECHO "#define HAVE_GETHOSTNAME 1" >>confdefs.h
@@ -70,24 +88,25 @@ case x$target_os in
     ;;
 
   *)
-    AC_CHECK_FUNCS([gai_strerror getaddrinfo gethostbyname gethostname])
+    AC_CHECK_FUNCS([closesocket gai_strerror getaddrinfo gethostbyname gethostbyname2 gethostname gethostbyaddr])
     ;;
 esac
 
 AC_CONFIG_LIBOBJ_DIR([snmplib])
 
 AC_REPLACE_FUNCS([getopt        inet_ntop     inet_pton        ] dnl
-                 [strlcpy       strtok_r      strtol           ] dnl
-                 [strtoul       strtoull                       ] )
+                 [strlcat       strlcpy       strtok_r         ] dnl
+                 [strtol        strtoul       strtoull         ] )
 
 #  Agent:
 AC_CHECK_FUNCS([cgetnext        chown          execv           ] dnl
-               [gai_strerror                   getgrnam        ] dnl
+               [forkall         fsync                          ] dnl
+               [gai_strerror    getgrnam                       ] dnl
                [gethostname     getloadavg                     ] dnl
                [getpid          getpwnam                       ] dnl
                [hasmntopt       initgroups                     ] dnl
-               [if_nameindex    if_nametoindex localtime_r     ] dnl
-               [mkstemp         mktime                         ] dnl
+               [if_nameindex    if_indextoname if_nametoindex  ] dnl
+               [localtime_r     mkstemp        mktime          ] dnl
                [poll            regcomp                        ] dnl
                [setgid          setgroups                      ] dnl
                [setmntent       setuid                         ] dnl
@@ -128,7 +147,7 @@ fi
 AC_MSG_CHECKING([[for two-argument statfs with struct fs_data (Ultrix)]])
 AC_CACHE_VAL(
     fu_cv_sys_stat_fs_data,
-    [AC_TRY_RUN([
+    [AC_RUN_IFELSE([AC_LANG_SOURCE([[
 #ifdef HAVE_SYS_PARAM_H
 #include <sys/param.h>
 #endif
@@ -145,10 +164,10 @@ struct fs_data fsd;
 /* Ultrix's statfs returns 1 for success,
    0 for not mounted, -1 for failure.  */
 exit (statfs (".", &fsd) != 1);
-}],
-    fu_cv_sys_stat_fs_data=yes,
-    fu_cv_sys_stat_fs_data=no,
-    fu_cv_sys_stat_fs_data=no)])
+}]])],
+    [fu_cv_sys_stat_fs_data=yes],
+    [fu_cv_sys_stat_fs_data=no],
+    [fu_cv_sys_stat_fs_data=no])])
 AC_MSG_RESULT($fu_cv_sys_stat_fs_data)
 if test $fu_cv_sys_stat_fs_data = yes; then
     AC_DEFINE(STAT_STATFS_FS_DATA, 1,
@@ -168,11 +187,11 @@ AC_CACHE_CHECK([how to get the name of the current function],
                [netsnmp_cv__func__name],[
     netsnmp_cv__func__name=no
     AC_COMPILE_IFELSE(
-        AC_LANG_PROGRAM(,[[const char* cp = __func__;]]),
+        [AC_LANG_PROGRAM(,[[const char* cp = __func__;]])],
         [netsnmp_cv__func__name=__func__])
     if test "$netsnmp_cv__func__name" = no ; then
       AC_COMPILE_IFELSE(
-        AC_LANG_PROGRAM(,[[const char* cp = __FUNCTION__;]]),
+        [AC_LANG_PROGRAM(,[[const char* cp = __FUNCTION__;]])],
         [netsnmp_cv__func__name=__FUNCTION__])
     fi])
 if test "$netsnmp_cv__func__name" != no; then
@@ -184,19 +203,15 @@ fi
 #       Whether static inline functions are broken      (SCO Unixware)
 #
 AC_CACHE_CHECK([[whether static inline functions are broken (Unixware)]],
-                [netsnmp_cv_c_broken_inline],
-    AC_COMPILE_IFELSE([[
+                [netsnmp_cv_broken_inline],
+    AC_COMPILE_IFELSE([AC_LANG_SOURCE([
 static inline int nested_inline_function(void) {
   return 0;
 }
 inline int main_inline_function( void ) {
   return nested_inline_function();
 }
-    ]],
-    netsnmp_cv_broken_inline=no,
-    netsnmp_cv_broken_inline=yes))
-
-
+    ])], [[
 #       Yes -  static inline functions are broken       (Solaris 2.x)
 #
 case "$target_os" in
@@ -204,8 +219,11 @@ case "$target_os" in
         netsnmp_cv_broken_inline=yes
         ;;
     *)
+        netsnmp_cv_broken_inline=no
         ;;
-esac
+esac]], [
+    netsnmp_cv_broken_inline=yes]
+))
 
 if test "$netsnmp_cv_broken_inline" = yes ; then
   AC_DEFINE(NETSNMP_BROKEN_INLINE, 1,
@@ -304,10 +322,11 @@ if echo " $transport_result_list " | $GREP "DTLS" > /dev/null; then
        [
         oldLIBS="$LIBS"
         LIBS="$LIBS -lcrypto"
-        AC_TRY_LINK(
-         [#include <openssl/bio.h>],
-         [BIO_dgram_get_peer(NULL, NULL);],,
-         AC_MSG_ERROR([DTLS support requires a newer version of OpenSSL]))
+        AC_LINK_IFELSE(
+          [AC_LANG_PROGRAM(
+            [[#include <openssl/bio.h>]],
+            [[BIO_dgram_get_peer(NULL, NULL);]])], [],
+          [AC_MSG_ERROR(DTLS support requires a newer version of OpenSSL)])
 
         LIBS="$oldLIBS"
        ]

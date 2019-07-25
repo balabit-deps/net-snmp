@@ -30,6 +30,7 @@
  * standard Net-SNMP includes 
  */
 #include <net-snmp/net-snmp-config.h>
+#include <net-snmp/net-snmp-features.h>
 #include <net-snmp/net-snmp-includes.h>
 #include <net-snmp/agent/net-snmp-agent-includes.h>
 
@@ -45,6 +46,18 @@
 #include "ipIfStatsTable_interface.h"
 
 #include <ctype.h>
+
+netsnmp_feature_child_of(ipIfStatsTable_external_access, libnetsnmpmibs)
+
+netsnmp_feature_require(row_merge)
+netsnmp_feature_require(baby_steps)
+netsnmp_feature_require(check_all_requests_error)
+
+
+netsnmp_feature_child_of(ipIfStatsTable_container_size, ipIfStatsTable_external_access)
+netsnmp_feature_child_of(ipIfStatsTable_registration_set, ipIfStatsTable_external_access)
+netsnmp_feature_child_of(ipIfStatsTable_registration_get, ipIfStatsTable_external_access)
+netsnmp_feature_child_of(ipIfStatsTable_container_get, ipIfStatsTable_external_access)
 
 /**********************************************************************
  **********************************************************************
@@ -80,19 +93,23 @@ static void     _ipIfStatsTable_container_init(ipIfStatsTable_interface_ctx
 static void    
 _ipIfStatsTable_container_shutdown(ipIfStatsTable_interface_ctx * if_ctx);
 
-
+#ifndef NETSNMP_FEATURE_REMOVE_IPIFSTATSTABLE_CONTAINER_GET
 netsnmp_container *
 ipIfStatsTable_container_get(void)
 {
     return ipIfStatsTable_if_ctx.container;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_IPIFSTATSTABLE_CONTAINER_GET */
 
+#ifndef NETSNMP_FEATURE_REMOVE_IPIFSTATSTABLE_REGISTRATION_GET
 ipIfStatsTable_registration *
 ipIfStatsTable_registration_get(void)
 {
     return ipIfStatsTable_if_ctx.user_ctx;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_IPIFSTATSTABLE_REGISTRATION_GET */
 
+#ifndef NETSNMP_FEATURE_REMOVE_IPIFSTATSTABLE_REGISTRATION_SET
 ipIfStatsTable_registration *
 ipIfStatsTable_registration_set(ipIfStatsTable_registration * newreg)
 {
@@ -100,12 +117,15 @@ ipIfStatsTable_registration_set(ipIfStatsTable_registration * newreg)
     ipIfStatsTable_if_ctx.user_ctx = newreg;
     return old;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_IPIFSTATSTABLE_REGISTRATION_SET */
 
+#ifndef NETSNMP_FEATURE_REMOVE_IPIFSTATSTABLE_CONTAINER_SIZE
 int
 ipIfStatsTable_container_size(void)
 {
     return CONTAINER_SIZE(ipIfStatsTable_if_ctx.container);
 }
+#endif /* NETSNMP_FEATURE_REMOVE_IPIFSTATSTABLE_CONTAINER_SIZE */
 
 /*
  * ipIfStatsTableLastChanged, which is the last time that a row in
@@ -227,17 +247,19 @@ _ipIfStatsTable_initialize_interface(ipIfStatsTable_registration * reg_ptr,
      */
     if (access_multiplexer->object_lookup)
         mfd_modes |= BABY_STEP_OBJECT_LOOKUP;
+
+    if (access_multiplexer->pre_request)
+        mfd_modes |= BABY_STEP_PRE_REQUEST;
+    if (access_multiplexer->post_request)
+        mfd_modes |= BABY_STEP_POST_REQUEST;
+
+#ifndef NETSNMP_NO_WRITE_SUPPORT
     if (access_multiplexer->set_values)
         mfd_modes |= BABY_STEP_SET_VALUES;
     if (access_multiplexer->irreversible_commit)
         mfd_modes |= BABY_STEP_IRREVERSIBLE_COMMIT;
     if (access_multiplexer->object_syntax_checks)
         mfd_modes |= BABY_STEP_CHECK_OBJECT;
-
-    if (access_multiplexer->pre_request)
-        mfd_modes |= BABY_STEP_PRE_REQUEST;
-    if (access_multiplexer->post_request)
-        mfd_modes |= BABY_STEP_POST_REQUEST;
 
     if (access_multiplexer->undo_setup)
         mfd_modes |= BABY_STEP_UNDO_SETUP;
@@ -254,6 +276,7 @@ _ipIfStatsTable_initialize_interface(ipIfStatsTable_registration * reg_ptr,
         mfd_modes |= BABY_STEP_COMMIT;
     if (access_multiplexer->undo_commit)
         mfd_modes |= BABY_STEP_UNDO_COMMIT;
+#endif /* !NETSNMP_NO_WRITE_SUPPORT */
 
     handler = netsnmp_baby_steps_handler_get(mfd_modes);
     netsnmp_inject_handler(reginfo, handler);
@@ -295,7 +318,7 @@ _ipIfStatsTable_initialize_interface(ipIfStatsTable_registration * reg_ptr,
      */
     {
         oid     lc_oid[] = { IPIFSTATSTABLELASTCHANGE_OID };
-        netsnmp_register_watched_scalar(netsnmp_create_handler_registration
+        netsnmp_register_watched_scalar2(netsnmp_create_handler_registration
                 ("ipIfStatsTableLastChanged", NULL,
                  lc_oid, OID_LENGTH(lc_oid),
                  HANDLER_CAN_RONLY),
@@ -699,10 +722,10 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCInReceives(4)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCINRECEIVES:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
         rc = ipIfStatsHCInReceives_get(rowreq_ctx,
-                                       (U64 *) var->val.string);
+                                       (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -718,9 +741,9 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCInOctets(6)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCINOCTETS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
-        rc = ipIfStatsHCInOctets_get(rowreq_ctx, (U64 *) var->val.string);
+        rc = ipIfStatsHCInOctets_get(rowreq_ctx, (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -787,10 +810,10 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCInForwDatagrams(13)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCINFORWDATAGRAMS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
         rc = ipIfStatsHCInForwDatagrams_get(rowreq_ctx,
-                                            (U64 *) var->val.string);
+                                            (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -846,10 +869,10 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCInDelivers(19)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCINDELIVERS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
         rc = ipIfStatsHCInDelivers_get(rowreq_ctx,
-                                       (U64 *) var->val.string);
+                                       (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -866,10 +889,10 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCOutRequests(21)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCOUTREQUESTS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
         rc = ipIfStatsHCOutRequests_get(rowreq_ctx,
-                                        (U64 *) var->val.string);
+                                        (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -886,10 +909,10 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCOutForwDatagrams(24)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCOUTFORWDATAGRAMS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
         rc = ipIfStatsHCOutForwDatagrams_get(rowreq_ctx,
-                                             (U64 *) var->val.string);
+                                             (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -956,10 +979,10 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCOutTransmits(31)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCOUTTRANSMITS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
         rc = ipIfStatsHCOutTransmits_get(rowreq_ctx,
-                                         (U64 *) var->val.string);
+                                         (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -976,9 +999,9 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCOutOctets(33)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCOUTOCTETS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
-        rc = ipIfStatsHCOutOctets_get(rowreq_ctx, (U64 *) var->val.string);
+        rc = ipIfStatsHCOutOctets_get(rowreq_ctx, (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -995,10 +1018,10 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCInMcastPkts(35)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCINMCASTPKTS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
         rc = ipIfStatsHCInMcastPkts_get(rowreq_ctx,
-                                        (U64 *) var->val.string);
+                                        (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -1015,10 +1038,10 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCInMcastOctets(37)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCINMCASTOCTETS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
         rc = ipIfStatsHCInMcastOctets_get(rowreq_ctx,
-                                          (U64 *) var->val.string);
+                                          (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -1035,10 +1058,10 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCOutMcastPkts(39)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCOUTMCASTPKTS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
         rc = ipIfStatsHCOutMcastPkts_get(rowreq_ctx,
-                                         (U64 *) var->val.string);
+                                         (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -1055,10 +1078,10 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCOutMcastOctets(41)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCOUTMCASTOCTETS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
         rc = ipIfStatsHCOutMcastOctets_get(rowreq_ctx,
-                                           (U64 *) var->val.string);
+                                           (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -1075,10 +1098,10 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCInBcastPkts(43)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCINBCASTPKTS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
         rc = ipIfStatsHCInBcastPkts_get(rowreq_ctx,
-                                        (U64 *) var->val.string);
+                                        (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -1095,10 +1118,10 @@ _ipIfStatsTable_get_column(ipIfStatsTable_rowreq_ctx * rowreq_ctx,
          * ipIfStatsHCOutBcastPkts(45)/COUNTER64/ASN_COUNTER64/U64(U64)//l/A/w/e/r/d/h 
          */
     case COLUMN_IPIFSTATSHCOUTBCASTPKTS:
-        var->val_len = sizeof(U64);
+        var->val_len = sizeof(struct counter64);
         var->type = ASN_COUNTER64;
         rc = ipIfStatsHCOutBcastPkts_get(rowreq_ctx,
-                                         (U64 *) var->val.string);
+                                         (struct counter64 *) var->val.string);
         break;
 
         /*
@@ -1368,6 +1391,7 @@ _ipIfStatsTable_container_shutdown(ipIfStatsTable_interface_ctx * if_ctx)
 }                               /* _ipIfStatsTable_container_shutdown */
 
 
+#ifndef NETSNMP_FEATURE_REMOVE_IPIFSTATSTABLE_EXTERNAL_ACCESS
 ipIfStatsTable_rowreq_ctx *
 ipIfStatsTable_row_find_by_mib_index(ipIfStatsTable_mib_index * mib_idx)
 {
@@ -1393,3 +1417,4 @@ ipIfStatsTable_row_find_by_mib_index(ipIfStatsTable_mib_index * mib_idx)
 
     return rowreq_ctx;
 }
+#endif /* NETSNMP_FEATURE_REMOVE_IPIFSTATSTABLE_EXTERNAL_ACCESS */

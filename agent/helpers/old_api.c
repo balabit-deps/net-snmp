@@ -1,3 +1,13 @@
+/*
+ * Portions of this file are subject to the following copyright(s).  See
+ * the Net-SNMP's COPYING file for more details and other copyrights
+ * that may apply:
+ *
+ * Portions of this file are copyrighted by:
+ * Copyright (c) 2016 VMware, Inc. All rights reserved.
+ * Use is subject to license terms specified in the COPYING file
+ * distributed with the Net-SNMP package.
+ */
 #include <net-snmp/net-snmp-config.h>
 
 #include <net-snmp/net-snmp-includes.h>
@@ -12,6 +22,8 @@
 #endif
 
 #include <net-snmp/agent/agent_callbacks.h>
+
+#include <stddef.h>
 
 #define MIB_CLIENTS_ARE_EVIL 1
 
@@ -28,7 +40,6 @@ static void free_wrapper(void * p)
  * don't use these! 
  */
 void            set_current_agent_session(netsnmp_agent_session *asp);
-netsnmp_agent_session *netsnmp_get_current_agent_session(void);
 
 /** @defgroup old_api old_api
  *  Calls mib module code written in the old style of code.
@@ -49,6 +60,19 @@ get_old_api_handler(void)
     return netsnmp_create_handler("old_api", netsnmp_old_api_helper);
 }
 
+struct variable *
+netsnmp_duplicate_variable(const struct variable *var)
+{
+    struct variable *var2 = NULL;
+    
+    if (var) {
+        const int varsize = offsetof(struct variable, name) + var->namelen * sizeof(var->name[0]);
+        var2 = malloc(varsize);
+        if (var2)
+            memcpy(var2, var, varsize);
+    }
+    return var2;
+}
 
 /** Registers an old API set into the mib tree.  Functionally this
  * mimics the old register_mib_context() function (and in fact the new
@@ -56,10 +80,10 @@ get_old_api_handler(void)
  */
 int
 netsnmp_register_old_api(const char *moduleName,
-                         struct variable *var,
+                         const struct variable *var,
                          size_t varsize,
                          size_t numvars,
-                         oid * mibloc,
+                         const oid * mibloc,
                          size_t mibloclen,
                          int priority,
                          int range_subid,
@@ -69,6 +93,7 @@ netsnmp_register_old_api(const char *moduleName,
 {
 
     unsigned int    i;
+    int             res;
 
     /*
      * register all subtree nodes 
@@ -80,22 +105,31 @@ netsnmp_register_old_api(const char *moduleName,
         if (reginfo == NULL)
             return SNMP_ERR_GENERR;
 
-        memdup((u_char **) &vp,
-               (void *) (struct variable *) ((char *) var + varsize * i),
-               varsize);
+	vp = netsnmp_duplicate_variable((const struct variable *)
+					((const char *) var + varsize * i));
 
         reginfo->handler = get_old_api_handler();
         reginfo->handlerName = strdup(moduleName);
         reginfo->rootoid_len = (mibloclen + vp->namelen);
         reginfo->rootoid =
             (oid *) malloc(reginfo->rootoid_len * sizeof(oid));
-        if (reginfo->rootoid == NULL)
+        if (NULL == reginfo->handler || NULL == reginfo->handlerName ||
+            NULL == reginfo->rootoid) {
+            netsnmp_handler_free(reginfo->handler);
+            SNMP_FREE(vp);
+            SNMP_FREE(reginfo->handlerName);
+            SNMP_FREE(reginfo->rootoid);
+            SNMP_FREE(reginfo);
             return SNMP_ERR_GENERR;
+        }
 
         memcpy(reginfo->rootoid, mibloc, mibloclen * sizeof(oid));
         memcpy(reginfo->rootoid + mibloclen, vp->name, vp->namelen
                * sizeof(oid));
         reginfo->handler->myvoid = (void *) vp;
+        reginfo->handler->data_clone
+	    = (void *(*)(void *))netsnmp_duplicate_variable;
+        reginfo->handler->data_free = free;
 
         reginfo->priority = priority;
         reginfo->range_subid = range_subid;
@@ -103,14 +137,17 @@ netsnmp_register_old_api(const char *moduleName,
         reginfo->range_ubound = range_ubound;
         reginfo->timeout = timeout;
         reginfo->contextName = (context) ? strdup(context) : NULL;
-        reginfo->modes = HANDLER_CAN_RWRITE;
+        reginfo->modes = vp->acl == NETSNMP_OLDAPI_RONLY ? HANDLER_CAN_RONLY :
+                         HANDLER_CAN_RWRITE;
 
         /*
          * register ourselves in the mib tree 
          */
-        if (netsnmp_register_handler(reginfo) != MIB_REGISTERED_OK) {
-            /** netsnmp_handler_registration_free(reginfo); already freed */
-            SNMP_FREE(vp);
+        res = netsnmp_register_handler(reginfo);
+        if (MIB_REGISTERED_OK != res) {
+            /** reginfo already freed on error. */
+            snmp_log(LOG_WARNING, "old_api handler registration failed\n");
+            return res;
         }
     }
     return SNMPERR_SUCCESS;
@@ -119,7 +156,7 @@ netsnmp_register_old_api(const char *moduleName,
 /** registers a row within a mib table */
 int
 netsnmp_register_mib_table_row(const char *moduleName,
-                               struct variable *var,
+                               const struct variable *var,
                                size_t varsize,
                                size_t numvars,
                                oid * mibloc,
@@ -133,8 +170,8 @@ netsnmp_register_mib_table_row(const char *moduleName,
     oid             ubound = 0;
 
     for (i = 0; i < numvars; i++) {
-        struct variable *vr =
-            (struct variable *) ((char *) var + (i * varsize));
+        const struct variable *vr =
+            (const struct variable *) ((const char *) var + (i * varsize));
         netsnmp_handler_registration *r;
         if ( var_subid > (int)mibloclen ) {
             break;    /* doesn't make sense */
@@ -146,23 +183,17 @@ netsnmp_register_mib_table_row(const char *moduleName,
              * Unregister whatever we have registered so far, and
              * return an error.  
              */
+            snmp_log(LOG_ERR, "mib table row registration failed\n");
             rc = MIB_REGISTRATION_FAILED;
             break;
         }
-        memset(r, 0, sizeof(netsnmp_handler_registration));
 
         r->handler = get_old_api_handler();
         r->handlerName = strdup(moduleName);
-
-        if (r->handlerName == NULL) {
-            netsnmp_handler_registration_free(r);
-            break;
-        }
-
         r->rootoid_len = mibloclen;
         r->rootoid = (oid *) malloc(r->rootoid_len * sizeof(oid));
-
-        if (r->rootoid == NULL) {
+        if (r->handler == NULL || r->handlerName == NULL ||
+            r->rootoid == NULL) {
             netsnmp_handler_registration_free(r);
             rc = MIB_REGISTRATION_FAILED;
             break;
@@ -175,18 +206,13 @@ netsnmp_register_mib_table_row(const char *moduleName,
                      r->rootoid_len));
         DEBUGMSG(("netsnmp_register_mib_table_row", "(%d)\n",
                      (var_subid - vr->namelen)));
-        r->handler->myvoid = (void *) malloc(varsize);
-
-        if (r->handler->myvoid == NULL) {
-            netsnmp_handler_registration_free(r);
-            rc = MIB_REGISTRATION_FAILED;
-            break;
-        }
-        memcpy((char *) r->handler->myvoid, vr, varsize);
+        r->handler->myvoid = netsnmp_duplicate_variable(vr);
+        r->handler->data_clone = (void *(*)(void *))netsnmp_duplicate_variable;
+        r->handler->data_free = free;
 
         r->contextName = (context) ? strdup(context) : NULL;
-
-        if (context != NULL && r->contextName == NULL) {
+        if (r->handler->myvoid == NULL ||
+            (context != NULL && r->contextName == NULL)) {
             netsnmp_handler_registration_free(r);
             rc = MIB_REGISTRATION_FAILED;
             break;
@@ -204,9 +230,10 @@ netsnmp_register_mib_table_row(const char *moduleName,
         if ((rc =
              netsnmp_register_handler_nocallback(r)) !=
             MIB_REGISTERED_OK) {
+            snmp_log(LOG_ERR, "mib table row registration failed\n");
             DEBUGMSGTL(("netsnmp_register_mib_table_row",
                         "register failed %d\n", rc));
-            netsnmp_handler_registration_free(r);
+            /** reginfo already freed */
             break;
         }
 
@@ -252,13 +279,13 @@ netsnmp_old_api_helper(netsnmp_mib_handler *handler,
     int             status;
 
     struct variable *vp;
-    WriteMethod    *write_method = NULL;
-    size_t          len;
-    u_char         *access = NULL;
     netsnmp_old_api_cache *cacheptr;
     netsnmp_agent_session *oldasp = NULL;
-    oid             tmp_name[MAX_OID_LEN];
+    u_char         *access = NULL;
+    WriteMethod    *write_method = NULL;
+    size_t          len;
     size_t          tmp_len;
+    oid             tmp_name[MAX_OID_LEN];
 
     vp = (struct variable *) handler->myvoid;
 
@@ -289,13 +316,18 @@ netsnmp_old_api_helper(netsnmp_mib_handler *handler,
         switch (reqinfo->mode) {
         case MODE_GET:
         case MODE_GETNEXT:
+#ifndef NETSNMP_NO_WRITE_SUPPORT
         case MODE_SET_RESERVE1:
+#endif /* !NETSNMP_NO_WRITE_SUPPORT */
             /*
              * Actually call the old mib-module function 
              */
             if (vp && vp->findVar) {
-                memcpy(tmp_name, requests->requestvb->name,
-                                 requests->requestvb->name_length*sizeof(oid));
+                tmp_len = requests->requestvb->name_length*sizeof(oid);
+                memcpy(tmp_name, requests->requestvb->name, tmp_len);
+                /** clear the rest of tmp_name to keep valgrind happy */
+                memset(&tmp_name[requests->requestvb->name_length], 0x0,
+                       sizeof(tmp_name)-tmp_len);
                 tmp_len = requests->requestvb->name_length;
                 access = (*(vp->findVar)) (cvp, tmp_name, &tmp_len,
                                            exact, &len, &write_method);
@@ -320,7 +352,9 @@ netsnmp_old_api_helper(netsnmp_mib_handler *handler,
                 /*
                  * result returned 
                  */
+#ifndef NETSNMP_NO_WRITE_SUPPORT
                 if (reqinfo->mode != MODE_SET_RESERVE1)
+#endif /* !NETSNMP_NO_WRITE_SUPPORT */
                     snmp_set_var_typed_value(requests->requestvb,
                                              cvp->type, access, len);
             } else {
@@ -345,7 +379,9 @@ netsnmp_old_api_helper(netsnmp_mib_handler *handler,
             /*
              * AAA: fall through for everything that is a set (see BBB) 
              */
+#ifndef NETSNMP_NO_WRITE_SUPPORT
             if (reqinfo->mode != MODE_SET_RESERVE1)
+#endif /* !NETSNMP_NO_WRITE_SUPPORT */
                 break;
 
             cacheptr = SNMP_MALLOC_TYPEDEF(netsnmp_old_api_cache);
@@ -362,6 +398,7 @@ netsnmp_old_api_helper(netsnmp_mib_handler *handler,
             /*
              * BBB: fall through for everything that is a set (see AAA) 
              */
+	    /* FALL THROUGH */
 
         default:
             /*

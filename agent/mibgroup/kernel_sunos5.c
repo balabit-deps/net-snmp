@@ -82,7 +82,7 @@ kstat_ctl_t    *kstat_fd = 0;
 static
 mibcache        Mibcache[MIBCACHE_SIZE+1] = {
     {MIB_SYSTEM, 0, (void *) -1, 0, 0, 0, 0},
-    {MIB_INTERFACES, 50 * sizeof(mib2_ifEntry_t), (void *) -1, 0, 30, 0,
+    {MIB_INTERFACES, 50 * sizeof(mib2_ifEntry_t), (void *) -1, 0, 3, 0,
      0},
     {MIB_AT, 0, (void *) -1, 0, 0, 0, 0},
     {MIB_IP, sizeof(mib2_ip_t), (void *) -1, 0, 60, 0, 0},
@@ -112,10 +112,20 @@ mibcache        Mibcache[MIBCACHE_SIZE+1] = {
     {MIB_IP6, 20 * sizeof(mib2_ipv6IfStatsEntry_t), (void *)-1, 0, 30, 0, 0},
 #endif
     {MIB_IP6_ADDR, 20 * sizeof(mib2_ipv6AddrEntry_t), (void *)-1, 0, 30, 0, 0},
+    {MIB_IP6_ROUTE, 200 * sizeof(mib2_ipv6AddrEntry_t), (void *)-1, 0, 30, 0, 0},
+    {MIB_ICMP6, 20 * sizeof(mib2_ipv6IfIcmpEntry_t), (void *)-1, 0, 30, 0, 0},
     {MIB_TCP6_CONN, 1000 * sizeof(mib2_tcp6ConnEntry_t), (void *) -1, 0, 30,
      0, 0},
     {MIB_UDP6_ENDPOINT, 1000 * sizeof(mib2_udp6Entry_t), (void *) -1, 0, 30,
      0, 0},
+#endif
+#ifdef MIB2_SCTP
+    {MIB_SCTP, sizeof(mib2_sctp_t), (void *)-1, 0, 60, 0, 0},
+    {MIB_SCTP_CONN, sizeof(mib2_sctpConnEntry_t), (void *)-1, 0, 60, 0, 0},
+    {MIB_SCTP_CONN_LOCAL, sizeof(mib2_sctpConnLocalEntry_t), (void *)-1, 0,
+     60, 0, 0},
+    {MIB_SCTP_CONN_REMOTE, sizeof(mib2_sctpConnRemoteEntry_t), (void *)-1, 0,
+     60, 0, 0},
 #endif
     {0},
 };
@@ -144,8 +154,16 @@ mibmap          Mibmap[MIBCACHE_SIZE+1] = {
 #endif
     {MIB2_IP6, 0},
     {MIB2_IP6, MIB2_IP6_ADDR},
+    {MIB2_IP6, MIB2_IP6_ROUTE},
+    {MIB2_ICMP6, 0},
     {MIB2_TCP6, MIB2_TCP6_CONN},
     {MIB2_UDP6, MIB2_UDP6_ENTRY},
+#endif
+#ifdef MIB2_SCTP
+    {MIB2_SCTP, 0},
+    {MIB2_SCTP, MIB2_SCTP_CONN},
+    {MIB2_SCTP, MIB2_SCTP_CONN_LOCAL},
+    {MIB2_SCTP, MIB2_SCTP_CONN_REMOTE},
 #endif
     {0},
 };
@@ -239,14 +257,10 @@ void
 init_kernel_sunos5(void)
 {
     static int creg   = 0;
-    const  int period = 30;
+    const  int period = 3;
     int    alarm_id   = 0;
 
     if (creg == 0) {
-	alarm_id = snmp_alarm_register(5, NULL, kernel_sunos5_cache_age,
-                                       NULL);
-	DEBUGMSGTL(("kernel_sunos5", "registered alarm %d with period 5s\n", 
-		    alarm_id));
 	alarm_id = snmp_alarm_register(period, SA_REPEAT, 
                                        kernel_sunos5_cache_age,
                                        (void *)period);
@@ -455,8 +469,7 @@ getKstat(const char *statname, const char *varname, void *value)
 	    case KSTAT_DATA_CHAR:
 		DEBUGMSGTL(("kernel_sunos5", "value: %s\n", d->value.c));
 		*(char **)v = buf;
-		buf[sizeof(buf)-1] = 0;
-		strncpy(buf, d->value.c, sizeof(buf)-1);
+		strlcpy(buf, d->value.c, sizeof(buf));
 		break;
 #ifdef KSTAT_DATA_INT32         /* Solaris 2.6 and up */
 	    case KSTAT_DATA_INT32:
@@ -609,8 +622,7 @@ getKstatString(const char *statname, const char *varname,
         if (strcmp(d->name, varname) == 0) {
             switch (d->data_type) {
             case KSTAT_DATA_CHAR:
-                value[value_len-1] = '\0';
-                strncpy(value, d->value.c, value_len-1); 
+                strlcpy(value, d->value.c, value_len);
                 DEBUGMSGTL(("kernel_sunos5", "value: %s\n", d->value.c));
                 break;
             default:
@@ -990,27 +1002,31 @@ getmib(int groupname, int subgroupname, void **statbuf, size_t *size,
 	    rc = getmsg(sd, NULL, &strbuf, &flags);
 	    switch (rc) {
 	    case -1:
-		rc = -ENOSR;
+		ret = -ENOSR;
+		snmp_perror("getmsg");
 		goto Return;
 
 	    default:
-		rc = -ENODATA;
+		snmp_log(LOG_ERR, "kernel_sunos5/getmib: getmsg returned %d\n", rc);
+		ret = -ENODATA;
 		goto Return;
 
 	    case MOREDATA:
-		oldsize = ( ((void *)strbuf.buf) - *statbuf) + strbuf.len;
-		strbuf.buf = (void *)realloc(*statbuf,oldsize+4096);
+		DEBUGMSGTL(("kernel_sunos5", "...... getmib increased buffer size\n"));
+		oldsize = ( strbuf.buf - (char *)*statbuf) + strbuf.len;
+		strbuf.buf = (char *)realloc(*statbuf, oldsize+4096);
 		if(strbuf.buf != NULL) {
 		    *statbuf = strbuf.buf;
 		    *size = oldsize + 4096;
-		    strbuf.buf = *statbuf + oldsize;
+		    strbuf.buf = (char *)*statbuf + oldsize;
 		    strbuf.maxlen = 4096;
+		    result = NOT_FOUND;
 		    break;
 		}
-		strbuf.buf = *statbuf + (oldsize - strbuf.len);
+		strbuf.buf = (char *)*statbuf + (oldsize - strbuf.len);
 	    case 0:
 		/* fix buffer to real size & position */
-		strbuf.len += ((void *)strbuf.buf) - *statbuf;
+		strbuf.len += strbuf.buf - (char*)*statbuf;
 		strbuf.buf = *statbuf;
 		strbuf.maxlen = *size;
 
@@ -1385,7 +1401,7 @@ getif(mib2_ifEntry_t *ifbuf, size_t size, req_e req_type,
      ifnp->if_index != 0 && (i < nentries); ifnp++) {
 
         DEBUGMSGTL(("kernel_sunos5", "...... getif %s\n", ifnp->if_name));
-        memcpy(lifrp->lifr_name, ifnp->if_name, LIFNAMSIZ);
+        strlcpy(lifrp->lifr_name, ifnp->if_name, LIFNAMSIZ);
         if_isv6 = B_FALSE;
 
         if (ioctl(ifsd, SIOCGLIFFLAGS, lifrp) < 0) {
@@ -1636,6 +1652,8 @@ set_if_info(mib2_ifEntry_t *ifp, unsigned index, char *name, uint64_t flags,
         /*
          * this is good 
          */
+	havespeed = B_TRUE;
+    } else if (getKstatInt("link", name, "ifspeed", &ifp->ifSpeed) == 0) {
 	havespeed = B_TRUE;
     }
 
@@ -2048,20 +2066,3 @@ main(int argc, char **argv)
 }
 #endif /*_GETMIBSTAT_TEST */
 #endif                          /* SUNOS5 */
-
-
-/*-
- * These variables describe the formatting of this file.  If you don't like the
- * template defaults, feel free to change them here (not in your .emacs file).
- *
- * Local Variables:
- * comment-column: 32
- * c-indent-level: 4
- * c-continued-statement-offset: 4
- * c-brace-offset: -4
- * c-argdecl-indent: 0
- * c-label-offset: -4
- * fill-column: 79
- * fill-prefix: " * "
- * End:
- */
