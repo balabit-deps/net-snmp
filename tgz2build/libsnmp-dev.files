@@ -1,0 +1,6 @@
+opt/syslog-ng/bin/net-snmp-config
+opt/syslog-ng/include/*
+opt/syslog-ng/lib/*.dylib
+opt/syslog-ng/lib/pkgconfig/*
+opt/syslog-ng/lib/*.s[o,l]*
+opt/syslog-ng/lib/*.a
