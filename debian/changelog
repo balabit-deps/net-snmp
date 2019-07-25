@@ -1,3 +1,9 @@
+net-snmp (5.8.1-2.syslogng70.0) syslogng60; urgency=medium
+
+  * upgrade to 5.8
+
+ -- Antal Nemes <antal.nemes@oneidentity.com>  Thu, 25 Jul 2019 15:03:27 +0200
+
 net-snmp (5.6.1-2.syslogng60.2) syslogng60; urgency=medium
 
   * add 'net-snmp-config' to package
