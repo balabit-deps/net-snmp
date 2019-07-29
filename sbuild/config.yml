@@ -8,8 +8,7 @@ builder:
                 --with-sys-contact=root --with-sys-location=Unknown
                 --with-logfile=none
                 --with-persistent-directory=/opt/syslog-ng/var/snmp
-                --without-perl-modules --enable-reentrant 
-                --disable-des --disable-md5
+                --without-perl-modules --enable-reentrant
                 --with-openssl=\${prefix}
   flags: "no-make-dist"
 platforms:
