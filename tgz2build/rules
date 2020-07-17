@@ -33,7 +33,7 @@ $(STAMPDIR)/stamp-build: configure
 install: $(STAMPDIR)/stamp-install
 $(STAMPDIR)/stamp-install: build
 	rm -rf $(ZBS_STAGE_DIR) || true
-	$(BUILDCMD) make install DESTDIR=$(ZBS_STAGE_DIR)/ ECHO=echo
+	$(BUILDCMD) make install DESTDIR=$(ZBS_STAGE_DIR)/
 	touch $@
 
 clean:
