@@ -1,0 +1,29 @@
+source="net-snmp"
+version=5.8.1-pe-1
+dependencies=(
+  'zlib' 'zlib-dev'
+  'libssl' 'libssl-dev'
+)
+
+build() {
+  cd "${build_dir}"
+  ${src_dir}/configure \
+    --prefix="${prefix}" \
+    --disable-agent \
+    --disable-applications \
+    --disable-manuals \
+    --disable-embedded-perl \
+    --with-default-snmp-version=3 \
+    --with-sys-contact=root \
+    --with-sys-location=Unknown \
+    --with-logfile=none \
+    --with-persistent-directory="${prefix}/var/snmp" \
+    --without-perl-modules \
+    --enable-reentrant \
+    --with-openssl="${prefix}"
+  make
+}
+
+install() {
+  make -C "${build_dir}" DESTDIR="${dest_dir}" install
+}
